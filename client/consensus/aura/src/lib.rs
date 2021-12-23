@@ -44,13 +44,20 @@ use std::{
 };
 
 // use futures::prelude::*;
-use futures::{channel::{oneshot, mpsc}, select, future, stream::StreamExt, prelude::*};
+use futures::{
+	future::Either,
+	channel::{oneshot, mpsc}, 
+	select, 
+	future,
+	stream::StreamExt,
+	prelude::*,
+};
 use futures_timer::Delay;
 use rand::Rng;
 // use sp_core::U256;
 // use sp_keyring::sr25519::Keyring;
 
-use log::{debug, trace};
+use log::{debug, error, info, warn, trace};
 
 use codec::{Codec, Decode, Encode};
 
@@ -60,7 +67,7 @@ use sc_consensus_aura_slots::{
 	BackoffAuthoringBlocksStrategy, InherentDataProviderExt, SlotInfo, StorageChanges,
 	SlotResult,
 };
-use sc_telemetry::TelemetryHandle;
+use sc_telemetry::{telemetry, TelemetryHandle, CONSENSUS_DEBUG, CONSENSUS_INFO, CONSENSUS_WARN};
 use sp_api::ProvideRuntimeApi;
 use sp_application_crypto::{AppKey, AppPublic};
 use sp_blockchain::{HeaderBackend, ProvideCache, Result as CResult};
@@ -210,16 +217,16 @@ where
 	P::Public: AppPublic + Hash + Member + Encode + Decode,
 	P::Signature: TryFrom<Vec<u8>> + Hash + Member + Encode + Decode,
 	B: BlockT,
-	C: ProvideRuntimeApi<B> 
-		+ BlockchainEvents<B> 
-		+ BlockOf 
-		+ ProvideCache<B> 
-		+ AuxStore 
-		+ HeaderBackend<B> 
-		+ Send 
-		+ Sync
-		+ 'static,
-	// C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + AuxStore + HeaderBackend<B> + Send + Sync,
+	// C: ProvideRuntimeApi<B> 
+	// 	+ BlockchainEvents<B> 
+	// 	+ BlockOf 
+	// 	+ ProvideCache<B> 
+	// 	+ AuxStore 
+	// 	+ HeaderBackend<B> 
+	// 	+ Send 
+	// 	+ Sync
+	// 	+ 'static,
+	C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + AuxStore + HeaderBackend<B> + Send + Sync,
 	C::Api: AuraApi<B, AuthorityId<P>>,
 	SC: SelectChain<B>,
 	I: BlockImport<B, Transaction = sp_api::TransactionFor<C, B>> + Send + Sync + 'static,
@@ -233,29 +240,30 @@ where
 	CAW: CanAuthorWith<B> + Send,
 	Error: std::error::Error + Send + From<sp_consensus::Error> + 'static,
 {
-	Ok(sc_consensus_aura_slots::aura_slot_worker_2(client, select_chain))
-	// let worker = build_aura_worker::<P, _, _, _, _, _, _, _, _>(BuildAuraWorkerParams {
-	// 	client: client.clone(),
-	// 	block_import,
-	// 	proposer_factory,
-	// 	keystore,
-	// 	sync_oracle: sync_oracle.clone(),
-	// 	justification_sync_link,
-	// 	force_authoring,
-	// 	backoff_authoring_blocks,
-	// 	telemetry,
-	// 	block_proposal_slot_portion,
-	// 	max_block_proposal_slot_portion,
-	// });
+	// Ok(sc_consensus_aura_slots::aura_slot_worker_2(client, select_chain))
 
-	// Ok(sc_consensus_aura_slots::aura_slot_worker(
-	// 	slot_duration,
-	// 	select_chain,
-	// 	worker,
-	// 	sync_oracle,
-	// 	create_inherent_data_providers,
-	// 	can_author_with,
-	// ))
+	let worker = build_aura_worker::<P, _, _, _, _, _, _, _, _>(BuildAuraWorkerParams {
+		client: client.clone(),
+		block_import,
+		proposer_factory,
+		keystore,
+		sync_oracle: sync_oracle.clone(),
+		justification_sync_link,
+		force_authoring,
+		backoff_authoring_blocks,
+		telemetry,
+		block_proposal_slot_portion,
+		max_block_proposal_slot_portion,
+	});
+
+	Ok(sc_consensus_aura_slots::aura_slot_worker(
+		slot_duration,
+		select_chain,
+		worker,
+		sync_oracle,
+		create_inherent_data_providers,
+		can_author_with,
+	))
 }
 
 /// Parameters of [`build_aura_worker`].
@@ -306,7 +314,8 @@ pub fn build_aura_worker<P, B, C, PF, I, SO, L, BS, Error>(
 		telemetry,
 		force_authoring,
 	}: BuildAuraWorkerParams<C, I, PF, SO, L, BS>,
-) -> impl sc_consensus_aura_slots::SlotWorker<B, <PF::Proposer as Proposer<B>>::Proof>
+) -> impl sc_consensus_aura_slots::SimpleSlotWorker<B>
+// ) -> impl sc_consensus_aura_slots::SlotWorker<B, <PF::Proposer as Proposer<B>>::Proof>
 where
 	B: BlockT,
 	C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + AuxStore + HeaderBackend<B> + Send + Sync,
@@ -407,64 +416,77 @@ where
 		slot: Slot,
 		epoch_data: &Self::EpochData,
 	) -> Option<Self::Claim> {
-		let mut election_result = vec![];
-		let authorities_len = self.authorities_len(&epoch_data);
+		// let mut election_result = vec![];
+		// let authorities_len = self.authorities_len(&epoch_data);
 
-		let &parent_id = header.number();
+		// let &parent_id = header.number();
 
-		if self.sync_oracle().is_author(){
-			self.sync_oracle().prepare_vote(parent_id, Duration::new(2,0));
+		// if self.sync_oracle().is_author(){
+		// 	self.sync_oracle().prepare_vote(parent_id, Duration::new(2,0));
+		// }
+
+		// thread::sleep(Duration::new(0, 100_000_000));
+
+		// let mut rng = rand::thread_rng();
+		// let local_random = rng.gen::<u64>() & 0xFFFFu64;
+
+		// let vote_data = <VoteData<B>>::new(local_random, parent_id);
+		// let (tx, mut rx) = mpsc::unbounded();
+		// self.sync_oracle().send_vote(vote_data.clone(), tx);
+
+		// thread::sleep(Duration::new(2,0));
+
+		// if self.sync_oracle().is_author(){
+		// 	self.sync_oracle().send_election_result();
+		// }
+
+		// let mut i = 0;
+		// let (timeout_count, timeout_interval) = (50, 20);
+		// loop{
+		// 	if let Ok(Some(rank)) = rx.try_next(){
+		// 		election_result.push(rank);
+		// 		continue;
+		// 	}
+
+		// 	thread::sleep(Duration::new(0, timeout_interval*1_000_000));
+		// 	i += 1;
+		// 	if i >= timeout_count{
+		// 		break;
+		// 	}
+		// }
+
+		// // election_result.iter().for_each(|i|{log::info!("election result: {:?}", i)});
+
+		// let claim_delay = claim_delay(authorities_len, election_result);
+
+		// if claim_delay.is_none(){
+		// 	return None
+		// }
+
+		let authors = epoch_data;
+		let expect_author = authors.get(0)?;
+
+		if SyncCryptoStore::has_keys(
+			&*self.keystore,
+			&[(expect_author.to_raw_vec(), sp_application_crypto::key_types::AURA)],
+		){
+			let pre_digest = PreDigest{authority_index: 0, slot: slot};
+			return Some((pre_digest, expect_author.clone()));
+		}
+		else{
+			return None;
 		}
 
-		thread::sleep(Duration::new(0, 100_000_000));
-
-		let mut rng = rand::thread_rng();
-		let local_random = rng.gen::<u64>() & 0xFFFFu64;
-
-		let vote_data = <VoteData<B>>::new(local_random, parent_id);
-		let (tx, mut rx) = mpsc::unbounded();
-		self.sync_oracle().send_vote(vote_data.clone(), tx);
-
-		thread::sleep(Duration::new(2,0));
-
-		if self.sync_oracle().is_author(){
-			self.sync_oracle().send_election_result();
-		}
-
-		let mut i = 0;
-		let (timeout_count, timeout_interval) = (50, 20);
-		loop{
-			if let Ok(Some(rank)) = rx.try_next(){
-				election_result.push(rank);
-				continue;
-			}
-
-			thread::sleep(Duration::new(0, timeout_interval*1_000_000));
-			i += 1;
-			if i >= timeout_count{
-				break;
-			}
-		}
-
-		// election_result.iter().for_each(|i|{log::info!("election result: {:?}", i)});
-
-		let claim_delay = claim_delay(authorities_len, election_result);
-
-		if claim_delay.is_none(){
-			return None
-		}
-
-		let authoritis = epoch_data;
-		for (idx, author) in authoritis.iter().enumerate(){
-			if SyncCryptoStore::has_keys(
-				&*self.keystore,
-				&[(author.to_raw_vec(), sp_application_crypto::key_types::AURA)],
-			){
-				let pre_digest = PreDigest{authority_index: idx as u32 , slot: slot};
-				return Some((pre_digest, author.clone()));
-			}
-		}
-		None
+		// for (idx, author) in authoritis.iter().enumerate(){
+		// 	if SyncCryptoStore::has_keys(
+		// 		&*self.keystore,
+		// 		&[(author.to_raw_vec(), sp_application_crypto::key_types::AURA)],
+		// 	){
+		// 		let pre_digest = PreDigest{authority_index: idx as u32 , slot: slot};
+		// 		return Some((pre_digest, author.clone()));
+		// 	}
+		// }
+		// None
 	}
 
 	// add by user
@@ -586,7 +608,6 @@ where
 			self.logging_target(),
 		)
 	}
-
 }
 
 fn aura_err<B: BlockT>(error: Error<B>) -> Error<B> {

@@ -35,8 +35,8 @@ use slots::Slots;
 
 use codec::{Decode, Encode};
 
-// use rand::Rng;
-use futures::{future::Either, Future, TryFutureExt};
+use rand::Rng;
+use futures::{future::Either, Future, TryFutureExt, channel::mpsc};
 
 use futures_timer::Delay;
 use log::{debug, error, info, warn};
@@ -44,7 +44,7 @@ use sc_consensus::{BlockImport, JustificationSyncLink};
 use sc_telemetry::{telemetry, TelemetryHandle, CONSENSUS_DEBUG, CONSENSUS_INFO, CONSENSUS_WARN};
 use sp_api::{ApiRef, ProvideRuntimeApi};
 use sp_arithmetic::traits::BaseArithmetic;
-use sp_consensus::{CanAuthorWith, Proposer, SelectChain, SlotData, SyncOracle};
+use sp_consensus::{CanAuthorWith, Proposer, SelectChain, SlotData, SyncOracle, VoteData};
 use sp_consensus_slots::Slot;
 use sp_inherents::CreateInherentDataProviders;
 use sp_runtime::{
@@ -271,6 +271,63 @@ pub trait SimpleSlotWorker<B: BlockT> {
 			return None
 		}
 
+		// vote progress
+		let mut election_result = vec![];
+		let &parent_id = slot_info.chain_head.number();
+
+		if self.sync_oracle().is_author(){
+			self.sync_oracle().prepare_vote(parent_id, Duration::new(2,0));
+		}
+
+		Delay::new(Duration::new(0, 100_000_000)).await;
+
+		// let mut rng = rand::thread_rng();
+		// let local_random = rng.gen::<u64>() & 0xFFFFu64;
+		let local_random = {
+			let mut rng = rand::thread_rng();
+			rng.gen::<u64>()&0xFFFFu64
+		};
+
+		let vote_data = <VoteData<B>>::new(local_random, parent_id);
+		let (tx, mut rx) = mpsc::unbounded();
+		self.sync_oracle().send_vote(vote_data.clone(), tx);
+
+		// delay after vote for send election result
+		Delay::new(Duration::new(2, 0)).await;
+
+		if self.sync_oracle().is_author(){
+			self.sync_oracle().send_election_result();
+		}
+
+		// delay receving election result
+		loop{
+			let election_result_delay = Delay::new(Duration::new(1,0));
+			match futures::future::select(rx.next(), election_result_delay).await{
+				Either::Left((Some(rank), _))=>{
+					election_result.push(rank);
+				},
+				Either::Left(_)=>{},
+				Either::Right(_)=>{
+					break;
+				}
+			}
+		}
+
+		let author_count = self.authorities_len(&epoch_data)?;
+		let election_head_count = election_result
+			.iter()
+			.filter_map(|rank|rank.as_ref()).fold(0, |r, &x| if x == 0 {r+1} else {r});
+		let claim_delay = {
+			if election_head_count * 2 >= author_count{
+				None
+			}
+			else{
+				let delay = author_count - election_head_count;
+				Some(Delay::new(Duration::new(delay as u64, 0)))
+			}
+		};
+		log::info!("claim delay: {:?}", claim_delay);
+
 		let claim = self.claim_slot(&slot_info.chain_head, slot, &epoch_data)?;
 
 		if self.should_backoff(slot, &slot_info.chain_head) {
@@ -436,6 +493,7 @@ where
 		&mut self,
 		slot_info: SlotInfo<B>,
 	) -> Option<SlotResult<B, <T::Proposer as Proposer<B>>::Proof>> {
+		log::info!("SlotWorker::on_slot()");
 		SimpleSlotWorker::on_slot(self, slot_info).await
 	}
 }
@@ -540,14 +598,14 @@ pub async fn start_slot_worker<B, C, W, T, SO, CIDP, CAW, Proof>(
 /// test slot fun
 pub async fn aura_slot_worker_2<B,C, S>(
 	client: Arc<C>,
-	select_chain: S,
+	_select_chain: S,
 ) where
 	B: BlockT,
 	C: BlockchainEvents<B> + 'static, 
 	S: SelectChain<B>,
 {
 	let timeout = Duration::new(3,0);
-	let mut timer = UntilImportedOrTimeout::new(client.import_notification_stream(), timeout);
+	let mut _timer = UntilImportedOrTimeout::new(client.import_notification_stream(), timeout);
 	// let mut timer_notification = timer.fuse();
 
 	let mut i = 0;
@@ -618,30 +676,23 @@ pub async fn aura_slot_worker_2<B,C, S>(
 	// 	i+=1;
 	// }
 }
-// pub async fn aura_slot_worker_2(){
-// 	let mut i = 0;
-// 	loop{
-// 		log::info!("aura_slot_worker_2: {}", i);
-// 		Delay::new(Duration::new(1, 0)).await;
-// 		i+=1;
-// 	}
-// }
 
 /// Start a new slot worker.
 ///
 /// Every time a new slot is triggered, `worker.on_slot` is called and the future it returns is
 /// polled until completion, unless we are major syncing.
-pub async fn aura_slot_worker<B, C, W, T, SO, CIDP, CAW, Proof>(
+pub async fn aura_slot_worker<B, S, W, T, SO, CIDP, CAW>(
 	slot_duration: SlotDuration<T>,
-	client: C,
+	select_chain: S,
 	mut worker: W,
 	mut sync_oracle: SO,
 	create_inherent_data_providers: CIDP,
 	can_author_with: CAW,
 ) where
 	B: BlockT,
-	C: SelectChain<B>,
-	W: SlotWorker<B, Proof>,
+	S: SelectChain<B>,
+	// W: SlotWorker<B, Proof>,
+	W: SimpleSlotWorker<B> + Send,
 	SO: SyncOracle<B> + Send,
 	T: SlotData + Clone,
 	CIDP: CreateInherentDataProviders<B, ()> + Send,
@@ -651,23 +702,25 @@ pub async fn aura_slot_worker<B, C, W, T, SO, CIDP, CAW, Proof>(
 	let SlotDuration(slot_duration) = slot_duration;
 
 	let mut slots =
-		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, client);
+		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
 
 	loop {
-		let slot_info = match slots.next_block().await {
-			Ok(r) => r,
-			Err(e) => {
-				warn!(target: "slots", "Error while polling for next slot: {:?}", e);
-				return
-			},
-		};
-		// let slot_info = match slots.next_slot().await {
+		// let slot_info = match slots.next_block().await {
 		// 	Ok(r) => r,
 		// 	Err(e) => {
 		// 		warn!(target: "slots", "Error while polling for next slot: {:?}", e);
 		// 		return
 		// 	},
 		// };
+		let slot_info = match slots.next_slot().await {
+			Ok(r) => r,
+			Err(e) => {
+				warn!(target: "slots", "Error while polling for next slot: {:?}", e);
+				return
+			},
+		};
+
+		// log::info!("{}: {}", slot_info.slot, worker.logging_target());
 
 		if sync_oracle.is_major_syncing() {
 			debug!(target: "slots", "Skipping proposal slot due to sync.");
