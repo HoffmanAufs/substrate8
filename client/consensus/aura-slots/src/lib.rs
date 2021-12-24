@@ -211,6 +211,7 @@ pub trait SimpleSlotWorker<B: BlockT> {
 	async fn on_slot(
 		&mut self,
 		slot_info: SlotInfo<B>,
+		client: Arc<dyn BlockchainEvents<B> + Sync + Send + 'static>,
 	) -> Option<SlotResult<B, <Self::Proposer as Proposer<B>>::Proof>> {
 		let (timestamp, slot) = (slot_info.timestamp, slot_info.slot);
 
@@ -317,16 +318,30 @@ pub trait SimpleSlotWorker<B: BlockT> {
 		let election_head_count = election_result
 			.iter()
 			.filter_map(|rank|rank.as_ref()).fold(0, |r, &x| if x == 0 {r+1} else {r});
-		let claim_delay = {
+		let (claim_delay, priority) = {
 			if election_head_count * 2 >= author_count{
-				None
+				log::info!("Priority: 1st");
+				(Delay::new(Duration::new(0, 100_000_000)), true)
 			}
 			else{
 				let delay = author_count - election_head_count;
-				Some(Delay::new(Duration::new(delay as u64, 0)))
+				log::info!("Priority: 2nd");
+				(Delay::new(Duration::new(delay as u64, 0)), false)
 			}
 		};
-		log::info!("claim delay: {:?}", claim_delay);
+		// log::info!("claim delay: {:?}", claim_delay);
+
+		match futures::future::select(client.import_notification_stream().next(), claim_delay).await{
+			Either::Left(_)=>{
+				log::info!("import block from remote");
+				return None;
+			},
+			Either::Right(_)=>{
+				if priority == false{
+					log::info!("primary block failed, prepare build block");
+				}
+			}
+		}
 
 		let claim = self.claim_slot(&slot_info.chain_head, slot, &epoch_data)?;
 
@@ -482,21 +497,21 @@ pub trait SimpleSlotWorker<B: BlockT> {
 	}
 }
 
-#[async_trait::async_trait]
-// impl<B: BlockT, T: SimpleSlotWorker<B> + Send> SlotWorker<B, <T::Proposer as Proposer<B>>::Proof> for T
-impl<B, T> SlotWorker<B, <T::Proposer as Proposer<B>>::Proof> for T
-where 
-	B: BlockT,
-	T: SimpleSlotWorker<B>+Send
-{
-	async fn on_slot(
-		&mut self,
-		slot_info: SlotInfo<B>,
-	) -> Option<SlotResult<B, <T::Proposer as Proposer<B>>::Proof>> {
-		log::info!("SlotWorker::on_slot()");
-		SimpleSlotWorker::on_slot(self, slot_info).await
-	}
-}
+// #[async_trait::async_trait]
+// // impl<B: BlockT, T: SimpleSlotWorker<B> + Send> SlotWorker<B, <T::Proposer as Proposer<B>>::Proof> for T
+// impl<B, T> SlotWorker<B, <T::Proposer as Proposer<B>>::Proof> for T
+// where 
+// 	B: BlockT,
+// 	T: SimpleSlotWorker<B>+Send
+// {
+// 	async fn on_slot(
+// 		&mut self,
+// 		slot_info: SlotInfo<B>,
+// 	) -> Option<SlotResult<B, <T::Proposer as Proposer<B>>::Proof>> {
+// 		log::info!("SlotWorker::on_slot()");
+// 		SimpleSlotWorker::on_slot(self, slot_info).await
+// 	}
+// }
 
 /// Slot specific extension that the inherent data provider needs to implement.
 pub trait InherentDataProviderExt {
@@ -681,8 +696,9 @@ pub async fn aura_slot_worker_2<B,C, S>(
 ///
 /// Every time a new slot is triggered, `worker.on_slot` is called and the future it returns is
 /// polled until completion, unless we are major syncing.
-pub async fn aura_slot_worker<B, S, W, T, SO, CIDP, CAW>(
+pub async fn aura_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	slot_duration: SlotDuration<T>,
+	client: Arc<C>,
 	select_chain: S,
 	mut worker: W,
 	mut sync_oracle: SO,
@@ -690,6 +706,7 @@ pub async fn aura_slot_worker<B, S, W, T, SO, CIDP, CAW>(
 	can_author_with: CAW,
 ) where
 	B: BlockT,
+	C: BlockchainEvents<B> + Sync + Send + 'static, 
 	S: SelectChain<B>,
 	// W: SlotWorker<B, Proof>,
 	W: SimpleSlotWorker<B> + Send,
@@ -720,8 +737,6 @@ pub async fn aura_slot_worker<B, S, W, T, SO, CIDP, CAW>(
 			},
 		};
 
-		// log::info!("{}: {}", slot_info.slot, worker.logging_target());
-
 		if sync_oracle.is_major_syncing() {
 			debug!(target: "slots", "Skipping proposal slot due to sync.");
 			continue
@@ -738,7 +753,7 @@ pub async fn aura_slot_worker<B, S, W, T, SO, CIDP, CAW>(
 				err,
 			);
 		} else {
-			let _ = worker.on_slot(slot_info).await;
+			let _ = worker.on_slot(slot_info, client.clone()).await;
 		}
 	}
 }

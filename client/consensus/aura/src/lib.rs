@@ -217,16 +217,16 @@ where
 	P::Public: AppPublic + Hash + Member + Encode + Decode,
 	P::Signature: TryFrom<Vec<u8>> + Hash + Member + Encode + Decode,
 	B: BlockT,
-	// C: ProvideRuntimeApi<B> 
-	// 	+ BlockchainEvents<B> 
-	// 	+ BlockOf 
-	// 	+ ProvideCache<B> 
-	// 	+ AuxStore 
-	// 	+ HeaderBackend<B> 
-	// 	+ Send 
-	// 	+ Sync
-	// 	+ 'static,
-	C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + AuxStore + HeaderBackend<B> + Send + Sync,
+	C: ProvideRuntimeApi<B> 
+		+ BlockchainEvents<B> 
+		+ BlockOf 
+		+ ProvideCache<B> 
+		+ AuxStore 
+		+ HeaderBackend<B> 
+		+ Send 
+		+ Sync
+		+ 'static,
+	// C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + AuxStore + HeaderBackend<B> + Send + Sync,
 	C::Api: AuraApi<B, AuthorityId<P>>,
 	SC: SelectChain<B>,
 	I: BlockImport<B, Transaction = sp_api::TransactionFor<C, B>> + Send + Sync + 'static,
@@ -258,6 +258,7 @@ where
 
 	Ok(sc_consensus_aura_slots::aura_slot_worker(
 		slot_duration,
+		client.clone(),
 		select_chain,
 		worker,
 		sync_oracle,
@@ -318,7 +319,7 @@ pub fn build_aura_worker<P, B, C, PF, I, SO, L, BS, Error>(
 // ) -> impl sc_consensus_aura_slots::SlotWorker<B, <PF::Proposer as Proposer<B>>::Proof>
 where
 	B: BlockT,
-	C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + AuxStore + HeaderBackend<B> + Send + Sync,
+	C: ProvideRuntimeApi<B> + BlockchainEvents<B> + BlockOf + ProvideCache<B> + AuxStore + HeaderBackend<B> + Send + Sync,
 	C::Api: AuraApi<B, AuthorityId<P>>,
 	PF: Environment<B, Error = Error> + Send + Sync + 'static,
 	PF::Proposer: Proposer<B, Error = Error, Transaction = sp_api::TransactionFor<C, B>>,
