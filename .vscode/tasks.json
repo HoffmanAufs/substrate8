@@ -1,0 +1,66 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "default run",
+            // "dependsOn": ["clean runtime", "clean cli", "build cli"],
+            "dependsOn": ["clean node-template", "build node-template"],
+            "dependsOrder": "sequence",
+            "problemMatcher":"$rustc",
+        },
+        {
+            "label": "clean node-template",
+            "command": "cargo",
+            "args": ["clean", "-p", "node-template"],
+            "problemMatcher":"$rustc",
+
+        },
+        {
+            "label": "build node-template",
+            "command": "cargo",
+            "args": ["build", "-p", "node-template"],
+            "problemMatcher":"$rustc",
+
+        },
+        {
+            "label": "clean runtime",
+            "command": "cargo",
+            "args": ["clean", "-p", "node-runtime"],
+            "problemMatcher":"$rustc",
+
+        },
+        {
+            "label": "clean cli",
+            "command": "cargo",
+            "args": ["clean", "-p", "node-cli"],
+            "problemMatcher":"$rustc",
+
+        },
+        {
+            "label": "build cli",
+            "command": "cargo",
+            "args": ["build", "-p", "node-cli"],
+            "problemMatcher":"$rustc",
+        },
+        {
+            "label": "clean alice node-template",
+            "command": "${workspaceFolder}/target/debug/node-template",
+            "args": ["purge-chain", "--base-path", "./tmp/alice", "--chain", "local", "-y"],
+            "problemMatcher":"$rustc",
+        },
+        {
+            "label": "clean bob node-template",
+            "command": "${workspaceFolder}/target/debug/node-template",
+            "args": ["purge-chain", "--base-path", "./tmp/bob", "--chain", "local", "-y"],
+            "problemMatcher":"$rustc",
+        },
+        {
+            "label": "clean bob substrate",
+            "command": "${workspaceFolder}/target/debug/substrate",
+            "args": ["purge-chain", "--base-path", "./tmp/bob", "--chain", "local", "-y"],
+            "problemMatcher":"$rustc",
+        },
+    ]
+  }

@@ -1,0 +1,79 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Bob Node-Cli",
+            "program": "${workspaceFolder}/target/debug/substrate",
+            "args": [
+                "--base-path","./tmp/bob",
+                "--chain", "local",
+                "--bob",
+                "--port", "30334",
+                "--ws-port","9946",
+                "--rpc-port","9934",
+                "--validator",
+                "--bootnodes", "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp",
+            ],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "clean bob substrate",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Bob Node-template",
+            "program": "${workspaceFolder}/target/debug/node-template",
+            "args": [
+                "--base-path","./tmp/bob",
+                "--chain", "local",
+                "--bob",
+                "--port", "30334",
+                "--ws-port","9946",
+                "--rpc-port","9934",
+                "--validator",
+                "--bootnodes", "/ip4/127.0.0.1/tcp/30333/p2p/12D3KooWEyoppNCUx8Yx66oV9fJnriXwCcXwDDUA2kj6vnc6iDEp"
+            ],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "clean bob node-template",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Bob BootNode Node-template",
+            "program": "${workspaceFolder}/target/debug/node-template",
+            "args": [
+                "--base-path","./tmp/bob",
+                "--chain", "local",
+                "--bob",
+                "--port", "30334",
+                "--ws-port","9946",
+                "--rpc-port","9934",
+                "--validator",
+                "--node-key",
+                "0000000000000000000000000000000000000000000000000000000000000001",
+            ],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "clean bob node-template",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Dev Substrate",
+            "program": "${workspaceFolder}/target/debug/substrate",
+            "args": ["--dev", "--tmp"],
+            "cwd": "${workspaceFolder}",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Dev Node-Template",
+            "program": "${workspaceFolder}/target/debug/node-template",
+            "args": ["--dev", "--tmp"],
+            "cwd": "${workspaceFolder}",
+        }
+    ]
+}
