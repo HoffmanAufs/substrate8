@@ -342,8 +342,9 @@ pub trait SimpleSlotWorker<B: BlockT> {
 		// let mut import_notification = self.block_chain_events().import_notification_stream();
 		let mut import_notification = self.block_notification_stream();
 		match futures::future::select(import_notification.next(), claim_delay).await{
-			Either::Left(_)=>{
-				log::info!("Import block from network in time");
+			Either::Left((d,_))=>{
+				d.map(|v|log::info!("Import from network: {:?}", v.header.number()));
+				// log::info!("Import block from network in time");
 				return None;
 			},
 			Either::Right(_)=>{
@@ -731,7 +732,36 @@ pub async fn aura_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	let mut slots =
 		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
 
+	let mut notification_stream = client.clone().import_notification_stream();
+
 	loop {
+		let chain_head = match self.client.best_chain().await {
+			Ok(x) => x,
+			Err(e) => {
+				log::warn!(
+					target: "slots",
+					"Unable to author block in slot. No best block header: {:?}",
+					e,
+				);
+				// Let's try at the next slot..
+				continue
+			},
+		};
+
+		if chain_head.number().is_zero(){
+			Delay::new(Duration::new(1,0)).await;
+		}
+		else{
+			let nt_delay = Delay::new(Duration::new(0, 100_000_000));
+			match futures::future::select(notification_stream_1.next(), nt_delay).await{
+				Either::Left((n,_))=>{
+					n.map(|v|log::info!("block import: {}, aura_slot_worker()", v.header.number()));
+				},
+				Either::Right(_)=>{
+					log::info!("block import timeout, aura_slot_worker()");
+				}
+			}
+		}
 		// let slot_info = match slots.next_block().await {
 		// 	Ok(r) => r,
 		// 	Err(e) => {
@@ -739,13 +769,30 @@ pub async fn aura_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 		// 		return
 		// 	},
 		// };
-		let slot_info = match slots.next_slot().await {
-			Ok(r) => r,
-			Err(e) => {
-				warn!(target: "slots", "Error while polling for next slot: {:?}", e);
-				return
-			},
-		};
+		// let slot_info = match slots.next_slot().await {
+		// 	Ok(r) => r,
+		// 	Err(e) => {
+		// 		warn!(target: "slots", "Error while polling for next slot: {:?}", e);
+		// 		return
+		// 	},
+		// };
+
+
+		let inherant_data_providers = create_inherent_data_providers(chain_head.hash(), ()).await?;
+
+		let timestamp = inherent_data_providers.timestamp();
+		let slot = inherent_data_providers.slot();
+		let inherent_data = inherent_data_providers.create_inherent_data()?;
+
+		let slot_info = SlotInfo::new(
+			slot,
+			timestamp,
+			inherent_data,
+			self.slot_duration,
+			chain_head,
+			None,
+		);
+
 
 		if sync_oracle.is_major_syncing() {
 			debug!(target: "slots", "Skipping proposal slot due to sync.");
