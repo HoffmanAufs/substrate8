@@ -54,7 +54,7 @@ use sp_runtime::{
 use sp_timestamp::Timestamp;
 use std::{fmt::Debug, ops::Deref, time::Duration, sync::Arc};
 
-use sc_client_api::{BlockchainEvents};
+use sc_client_api::{BlockchainEvents, ImportNotifications};
 use crate::worker::UntilImportedOrTimeout;
 use futures::StreamExt;
 
@@ -118,11 +118,18 @@ pub trait SimpleSlotWorker<B: BlockT> {
 	/// Epoch data necessary for authoring.
 	type EpochData: Send + 'static;
 
+	/// import_notification_stream
+	// type BlockchainEvents: BlockchainEvents<B>;
+
 	/// The logging target to use when logging messages.
 	fn logging_target(&self) -> &'static str;
 
 	/// A handle to a `BlockImport`.
 	fn block_import(&mut self) -> &mut Self::BlockImport;
+
+	// fn block_chain_events(&self)->Self::BlockchainEvents;
+
+	fn block_notification_stream(&self)->ImportNotifications<B>;
 
 	/// Returns the epoch data necessary for authoring. For time-dependent epochs,
 	/// use the provided slot number as a canonical source of time.
@@ -211,7 +218,7 @@ pub trait SimpleSlotWorker<B: BlockT> {
 	async fn on_slot(
 		&mut self,
 		slot_info: SlotInfo<B>,
-		client: Arc<dyn BlockchainEvents<B> + Sync + Send + 'static>,
+		// client: Arc<dyn BlockchainEvents<B> + Sync + Send + 'static>,
 	) -> Option<SlotResult<B, <Self::Proposer as Proposer<B>>::Proof>> {
 		let (timestamp, slot) = (slot_info.timestamp, slot_info.slot);
 
@@ -331,14 +338,17 @@ pub trait SimpleSlotWorker<B: BlockT> {
 		};
 		// log::info!("claim delay: {:?}", claim_delay);
 
-		match futures::future::select(client.import_notification_stream().next(), claim_delay).await{
+		// match futures::future::select(client.import_notification_stream().next(), claim_delay).await{
+		// let mut import_notification = self.block_chain_events().import_notification_stream();
+		let mut import_notification = self.block_notification_stream();
+		match futures::future::select(import_notification.next(), claim_delay).await{
 			Either::Left(_)=>{
-				log::info!("import block from remote");
+				log::info!("Import block from network in time");
 				return None;
 			},
 			Either::Right(_)=>{
 				if priority == false{
-					log::info!("primary block failed, prepare build block");
+					log::info!("1st build failed, build block by self");
 				}
 			}
 		}
@@ -753,7 +763,8 @@ pub async fn aura_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 				err,
 			);
 		} else {
-			let _ = worker.on_slot(slot_info, client.clone()).await;
+			let _ = worker.on_slot(slot_info).await;
+			// let _ = worker.on_slot(slot_info, client.clone()).await;
 		}
 	}
 }

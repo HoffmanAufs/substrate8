@@ -61,7 +61,7 @@ use log::{debug, error, info, warn, trace};
 
 use codec::{Codec, Decode, Encode};
 
-use sc_client_api::{backend::AuxStore, BlockOf, UsageProvider, BlockchainEvents};
+use sc_client_api::{backend::AuxStore, BlockOf, UsageProvider, BlockchainEvents, ImportNotifications};
 use sc_consensus::{BlockImport, BlockImportParams, ForkChoiceStrategy, StateAction};
 use sc_consensus_aura_slots::{
 	BackoffAuthoringBlocksStrategy, InherentDataProviderExt, SlotInfo, StorageChanges,
@@ -368,7 +368,8 @@ impl<B, C, E, I, P, Error, SO, L, BS> sc_consensus_aura_slots::SimpleSlotWorker<
 	for AuraWorker<C, E, I, P, SO, L, BS>
 where
 	B: BlockT,
-	C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + HeaderBackend<B> + Sync,
+	C: ProvideRuntimeApi<B> + BlockchainEvents<B> + BlockOf + ProvideCache<B> + HeaderBackend<B> + Sync,
+	// C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + HeaderBackend<B> + Sync,
 	C::Api: AuraApi<B, AuthorityId<P>>,
 	E: Environment<B, Error = Error>,
 	E::Proposer: Proposer<B, Error = Error, Transaction = sp_api::TransactionFor<C, B>>,
@@ -390,6 +391,7 @@ where
 	type Claim = (PreDigest, P::Public);
 	// type Claim = P::Public;
 	type EpochData = Vec<AuthorityId<P>>;
+	// type BlockchainEvents = BlockchainEvents<B>;
 
 	fn logging_target(&self) -> &'static str {
 		"aura"
@@ -397,6 +399,15 @@ where
 
 	fn block_import(&mut self) -> &mut Self::BlockImport {
 		&mut self.block_import
+	}
+
+	// fn block_chain_events(&self)->BlockchainEvents{
+	// 	self.client
+	// }
+
+	fn block_notification_stream(&self)->ImportNotifications<B>{
+		self.client.import_notification_stream()
+		// &self.client.import_notification_stream()
 	}
 
 	fn epoch_data(
