@@ -46,10 +46,10 @@ use sp_api::{ApiRef, ProvideRuntimeApi};
 use sp_arithmetic::traits::BaseArithmetic;
 use sp_consensus::{CanAuthorWith, Proposer, SelectChain, SlotData, SyncOracle, VoteData};
 use sp_consensus_slots::Slot;
-use sp_inherents::CreateInherentDataProviders;
+use sp_inherents::{CreateInherentDataProviders, InherentDataProvider};
 use sp_runtime::{
 	generic::BlockId,
-	traits::{Block as BlockT, HashFor, Header as HeaderT, NumberFor},
+	traits::{Block as BlockT, HashFor, Header as HeaderT, NumberFor, Zero},
 };
 use sp_timestamp::Timestamp;
 use std::{fmt::Debug, ops::Deref, time::Duration, sync::Arc};
@@ -568,6 +568,139 @@ impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H, I, J);
 ///
 /// Every time a new slot is triggered, `worker.on_slot` is called and the future it returns is
 /// polled until completion, unless we are major syncing.
+pub async fn aura_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
+	slot_duration: SlotDuration<T>,
+	client: Arc<C>,
+	select_chain: S,
+	mut worker: W,
+	mut sync_oracle: SO,
+	create_inherent_data_providers: CIDP,
+	can_author_with: CAW,
+) where
+	B: BlockT,
+	C: BlockchainEvents<B> + Sync + Send + 'static, 
+	S: SelectChain<B>,
+	// W: SlotWorker<B, Proof>,
+	W: SimpleSlotWorker<B> + Send,
+	SO: SyncOracle<B> + Send,
+	T: SlotData + Clone,
+	CIDP: CreateInherentDataProviders<B, ()> + Send,
+	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
+	CAW: CanAuthorWith<B> + Send,
+{
+	let SlotDuration(slot_duration) = slot_duration;
+	
+	let (tx, mut rx) = mpsc::unbounded();
+	sync_oracle.build_vote_stream(tx);
+
+	// let vote_notification = sync_oracle.vote_notification();
+
+	// let mut slots =
+	// 	Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
+
+	// let mut notification_stream = client.clone().import_notification_stream();
+
+	loop {
+		let chain_head = match select_chain.best_chain().await {
+			Ok(x) => x,
+			Err(e) => {
+				log::warn!(
+					target: "slots",
+					"Unable to author block in slot. No best block header: {:?}",
+					e,
+				);
+				// Let's try at the next slot..
+				continue
+			},
+		};
+
+
+		if chain_head.number().is_zero(){
+			Delay::new(Duration::new(1,0)).await;
+		}
+		else{
+			let notification_delay = Delay::new(Duration::new(0, 100_000_000));
+			match futures::future::select(client.import_notification_stream().next(), notification_delay).await{
+				Either::Left((n,_))=>{
+					n.map(|v|log::info!("block import: {}, aura_slot_worker()", v.header.number()));
+				},
+				Either::Right(_)=>{
+					log::info!("block import timeout, aura_slot_worker()");
+				}
+			}
+
+			let notification_delay = Delay::new(Duration::new(0, 100_000_000));
+			match futures::future::select(rx.next(), notification_delay).await{
+				Either::Left((n,_))=>{
+					log::info!("recv notification: {:?}", n);
+				},
+				Either::Right(_)=>{
+					log::info!("vote notificaiton timeout, aura_slot_worker()");
+				}
+			}
+		}
+
+		let inherent_data_providers = match create_inherent_data_providers.create_inherent_data_providers(chain_head.hash(), ()).await{
+			Ok(x)=>x,
+			Err(e)=>{
+				log::info!(target: "slot", 
+					"create inherent data providers err: {:?}", 
+					e
+				);
+				continue
+			},
+		};
+
+		let timestamp = inherent_data_providers.timestamp();
+		let slot = inherent_data_providers.slot();
+		let inherent_data = match inherent_data_providers.create_inherent_data(){
+			Ok(x)=>x,
+			Err(e)=>{
+				log::info!(target: "slot", 
+					"create inherent data err: {:?}", 
+					e,
+				);
+				continue
+			},
+		};
+
+		let slot_info = SlotInfo::new(
+		// let slot_info = <SlotInfo<B>>::new(
+			slot,
+			timestamp,
+			inherent_data,
+			slot_duration.slot_duration(),
+			chain_head.clone(),
+			None,
+		);
+
+
+		if sync_oracle.is_major_syncing() {
+			debug!(target: "slots", "Skipping proposal slot due to sync.");
+			continue
+		}
+
+		if let Err(err) =
+			can_author_with.can_author_with(&BlockId::Hash(slot_info.chain_head.hash()))
+		{
+			warn!(
+				target: "slots",
+				"Unable to author block in slot {},. `can_author_with` returned: {} \
+				Probably a node update is required!",
+				slot_info.slot,
+				err,
+			);
+		} else {
+			let _ = worker.on_slot(slot_info).await;
+			// let _ = worker.on_slot(slot_info, client.clone()).await;
+		}
+	}
+}
+
+/// Start a new slot worker.
+///
+/// Every time a new slot is triggered, `worker.on_slot` is called and the future it returns is
+/// polled until completion, unless we are major syncing.
 pub async fn start_slot_worker<B, C, W, T, SO, CIDP, CAW, Proof>(
 	slot_duration: SlotDuration<T>,
 	client: C,
@@ -619,6 +752,32 @@ pub async fn start_slot_worker<B, C, W, T, SO, CIDP, CAW, Proof>(
 		}
 	}
 }
+
+// pub async fn aura_slot_worker_3<B,C>(
+// 	client: Arc<C>,
+// 	select_chain: S
+// )
+// where
+// 	B: BlockT,
+// 	C: BlockchainEvents<B> + 'static,
+// 	S: SelectChain<B>
+// {
+// 	let (tx, mut rx) = mpsc::unbounded();
+// 	loop{
+// 		let chain_head = select_chain.best_chain().await;
+// 		let best_number = chain_head.number();
+
+// 		let delay = Delay::new(Duration::new(3, 0));
+// 		futures::select!{
+// 			notification = client.import_notification_stream().fuse()=>{
+// 				log::info!("import_block: {}", best_number);
+// 			},
+// 			_ = delay.fuse()=>{
+// 				log::info!("time out: {}", best_number);
+// 			}
+// 		}
+// 	}
+// }
 
 
 /// test slot fun
@@ -701,119 +860,6 @@ pub async fn aura_slot_worker_2<B,C, S>(
 	// 	}
 	// 	i+=1;
 	// }
-}
-
-/// Start a new slot worker.
-///
-/// Every time a new slot is triggered, `worker.on_slot` is called and the future it returns is
-/// polled until completion, unless we are major syncing.
-pub async fn aura_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
-	slot_duration: SlotDuration<T>,
-	client: Arc<C>,
-	select_chain: S,
-	mut worker: W,
-	mut sync_oracle: SO,
-	create_inherent_data_providers: CIDP,
-	can_author_with: CAW,
-) where
-	B: BlockT,
-	C: BlockchainEvents<B> + Sync + Send + 'static, 
-	S: SelectChain<B>,
-	// W: SlotWorker<B, Proof>,
-	W: SimpleSlotWorker<B> + Send,
-	SO: SyncOracle<B> + Send,
-	T: SlotData + Clone,
-	CIDP: CreateInherentDataProviders<B, ()> + Send,
-	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
-	CAW: CanAuthorWith<B> + Send,
-{
-	let SlotDuration(slot_duration) = slot_duration;
-
-	let mut slots =
-		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
-
-	let mut notification_stream = client.clone().import_notification_stream();
-
-	loop {
-		let chain_head = match self.client.best_chain().await {
-			Ok(x) => x,
-			Err(e) => {
-				log::warn!(
-					target: "slots",
-					"Unable to author block in slot. No best block header: {:?}",
-					e,
-				);
-				// Let's try at the next slot..
-				continue
-			},
-		};
-
-		if chain_head.number().is_zero(){
-			Delay::new(Duration::new(1,0)).await;
-		}
-		else{
-			let nt_delay = Delay::new(Duration::new(0, 100_000_000));
-			match futures::future::select(notification_stream_1.next(), nt_delay).await{
-				Either::Left((n,_))=>{
-					n.map(|v|log::info!("block import: {}, aura_slot_worker()", v.header.number()));
-				},
-				Either::Right(_)=>{
-					log::info!("block import timeout, aura_slot_worker()");
-				}
-			}
-		}
-		// let slot_info = match slots.next_block().await {
-		// 	Ok(r) => r,
-		// 	Err(e) => {
-		// 		warn!(target: "slots", "Error while polling for next slot: {:?}", e);
-		// 		return
-		// 	},
-		// };
-		// let slot_info = match slots.next_slot().await {
-		// 	Ok(r) => r,
-		// 	Err(e) => {
-		// 		warn!(target: "slots", "Error while polling for next slot: {:?}", e);
-		// 		return
-		// 	},
-		// };
-
-
-		let inherant_data_providers = create_inherent_data_providers(chain_head.hash(), ()).await?;
-
-		let timestamp = inherent_data_providers.timestamp();
-		let slot = inherent_data_providers.slot();
-		let inherent_data = inherent_data_providers.create_inherent_data()?;
-
-		let slot_info = SlotInfo::new(
-			slot,
-			timestamp,
-			inherent_data,
-			self.slot_duration,
-			chain_head,
-			None,
-		);
-
-
-		if sync_oracle.is_major_syncing() {
-			debug!(target: "slots", "Skipping proposal slot due to sync.");
-			continue
-		}
-
-		if let Err(err) =
-			can_author_with.can_author_with(&BlockId::Hash(slot_info.chain_head.hash()))
-		{
-			warn!(
-				target: "slots",
-				"Unable to author block in slot {},. `can_author_with` returned: {} \
-				Probably a node update is required!",
-				slot_info.slot,
-				err,
-			);
-		} else {
-			let _ = worker.on_slot(slot_info).await;
-			// let _ = worker.on_slot(slot_info, client.clone()).await;
-		}
-	}
 }
 
 /// A header which has been checked
@@ -959,7 +1005,6 @@ pub fn proposing_remaining_duration<Block: BlockT>(
 	slot_lenience_type: SlotLenienceType,
 	log_target: &str,
 ) -> Duration {
-	use sp_runtime::traits::Zero;
 
 	let proposing_duration = slot_info.duration.mul_f32(block_proposal_slot_portion.get());
 

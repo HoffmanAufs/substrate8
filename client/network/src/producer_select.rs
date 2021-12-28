@@ -94,6 +94,7 @@ impl ProducerSelectHandlerPrototype {
 		let event_stream = service.event_stream("producer-select-handler").boxed();
 		let (to_handler, from_controller) = mpsc::unbounded();
 		// let gossip_enabled = Arc::new(AtomicBool::new(false));
+		// let (vote_notification_tx, vote_notification_rx) = mpsc::unbounded();
 
 		let handler = ProducerSelectHandler {
 			protocol_name: self.protocol_name,
@@ -107,12 +108,13 @@ impl ProducerSelectHandlerPrototype {
 				None
 			},
 			vote_map: BTreeMap::new(),
+			vote_recv_config: None,
 			pending_response: None,
+			vote_notification_tx: None,
 
 			// vote_sync_number: None,
 			// vote_begin_time: SystemTime::UNIX_EPOCH,
 			// vote_open_duration: Duration::new(0,0),
-			vote_recv_config: None,
 		};
 
 		let controller = ProducerSelectHandlerController { to_handler};
@@ -123,6 +125,7 @@ impl ProducerSelectHandlerPrototype {
 
 pub struct ProducerSelectHandlerController<B: BlockT>{
     to_handler: mpsc::UnboundedSender<ToHandler<B>>,
+	// vote_notification_rx: mpsc::UnboundedReceiver<VoteData<B>>,
 }
 
 impl<B: BlockT> ProducerSelectHandlerController<B>{
@@ -145,6 +148,10 @@ impl<B: BlockT> ProducerSelectHandlerController<B>{
 	pub fn send_election_result(&self){
 		let _ = self.to_handler.unbounded_send(ToHandler::SendElectionResult);
 	}
+
+	pub fn build_vote_stream(&self, tx: mpsc::UnboundedSender<VoteData<B>>){
+		let _ = self.to_handler.unbounded_send(ToHandler::BuildVoteStream(tx));
+	}
 }
 
 enum ToHandler<B: BlockT> {
@@ -153,6 +160,7 @@ enum ToHandler<B: BlockT> {
 	SendVote(VoteData<B>, mpsc::UnboundedSender<Option<usize>>),
 	PrepareVote(NumberFor<B>, Duration),
 	SendElectionResult,
+	BuildVoteStream(mpsc::UnboundedSender<VoteData<B>>),
 }
 
 /// Handler for transactions. Call [`TransactionsHandler::run`] to start the processing.
@@ -190,6 +198,8 @@ pub struct ProducerSelectHandler<B: BlockT + 'static, H: ExHashT> {
 	vote_recv_config: Option<VoteRecvConfig<B>>,
 
 	pending_response: Option<mpsc::UnboundedSender<Option<usize>>>,
+
+	vote_notification_tx: Option<mpsc::UnboundedSender<VoteData<B>>>,
 }
 
 struct VoteRecvConfig<B: BlockT>{
@@ -256,6 +266,9 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 						ToHandler::PrepareVote(sync_number, duration)=>{
 							self.prepare_vote(sync_number, duration);
 						}
+						ToHandler::BuildVoteStream(tx)=>{
+							self.vote_notification_tx = Some(tx);
+						}
 					}
 				},
 			}
@@ -318,6 +331,10 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 					if let Ok(web_msg) = <WebMessage<B> as Decode>::decode(&mut message.as_ref()){
 						match web_msg {
 							WebMessage::VoteData(vote_data) => {
+								// self.vote_notification_tx.clone().map(|v|v.unbounded_send(vote_data.clone()));
+								self.vote_notification_tx.as_ref().map(|v|v.unbounded_send(vote_data.clone()));
+
+								// let _ = self.vote_notification_tx.unbounded_send(vote_data.clone());
 								if let Some(vote_recv_config) = &self.vote_recv_config{
 									if let Ok(elapsed) = vote_recv_config.begin_time.elapsed(){
 										let VoteData{vote_num, sync_id} = vote_data;

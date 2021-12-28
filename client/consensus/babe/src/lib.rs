@@ -773,7 +773,7 @@ where
 				// }
 			}
 
-			thread::sleep_ms(interval);
+			thread::sleep(Duration::new(0, interval*1_000_000));
 			i += 1;
 			if i >= timeout_count{
 				break;

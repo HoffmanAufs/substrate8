@@ -30,6 +30,7 @@ use sp_runtime::{
 };
 use sp_state_machine::StorageProof;
 use codec::{Encode, Decode};
+use libp2p::PeerId;
 
 pub mod block_validation;
 pub mod error;
@@ -233,18 +234,18 @@ pub trait SyncOracle<B: BlockT> {
 	/// Returns true if so.
 	fn is_offline(&mut self) -> bool;
 
-
+	// method for consensus
+	fn local_peer_id(&mut self)->Option<PeerId>;
 	fn send_number(&mut self, n: u64, pending_response: mpsc::UnboundedSender<u64>);
-	// fn propagate_random(&mut self, vote_num: u64, parent_id: B::Header::Number);
-	// fn propagate_random(&mut self, vote_num: u64, parent_id: &<B::Header as HeaderT>::Number);
 	fn propagate_random(&mut self, vote_num: u64, parent_id: NumberFor<B>);
-
-	// method for vote
 	fn is_author(&mut self)->bool;
 	fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration);
 	fn send_vote(&mut self, vote_data: VoteData<B>, tx: mpsc::UnboundedSender<Option<usize>>);
 	fn send_election_result(&mut self);
+	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<VoteData<B>>);
 
+	// fn build_election_stream(&mut self);
+	// fn vote_notification(&mut self)->Option<&mut mpsc::UnboundedReceiver<VoteData<B>>>;
 }
 
 /// A synchronization oracle for when there is no network.
@@ -255,19 +256,26 @@ impl<B: BlockT> SyncOracle<B> for NoNetwork {
 	fn is_major_syncing(&mut self) -> bool {
 		false
 	}
+
 	fn is_offline(&mut self) -> bool {
+		false
+	}
+
+	// methods for consensus
+	fn local_peer_id(&mut self)->Option<PeerId>{
+		None
+	}
+	fn is_author(&mut self)->bool{
 		false
 	}
 
 	fn send_number(&mut self, _: u64, _pending_response: mpsc::UnboundedSender<u64>){}
 	fn propagate_random(&mut self, _: u64, _: NumberFor<B>){}
-
-	fn is_author(&mut self)->bool{
-		false
-	}
 	fn prepare_vote(&mut self, _: NumberFor<B>, _: Duration){}
 	fn send_vote(&mut self, _: VoteData<B>, _: mpsc::UnboundedSender<Option<usize>>){}
 	fn send_election_result(&mut self){}
+	fn build_vote_stream(&mut self, _: mpsc::UnboundedSender<VoteData<B>>){}
+	// fn build_election_stream(&mut self){}
 }
 
 impl<B:BlockT, T> SyncOracle<B> for Arc<T>
@@ -283,6 +291,10 @@ where
 		<&T>::is_offline(&mut &**self)
 	}
 
+	// methods for consensus
+	fn local_peer_id(&mut self)->Option<PeerId>{
+		<&T>::local_peer_id(&mut &**self)
+	}
 
 	fn send_number(&mut self, n: u64, pending_response: mpsc::UnboundedSender<u64>){
 		<&T>::send_number(&mut &**self, n, pending_response)
@@ -308,6 +320,17 @@ where
 		<&T>::send_election_result(&mut &**self)
 	}
 
+	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<VoteData<B>>){
+		<&T>::build_vote_stream(&mut &**self, tx)
+	}
+
+	// fn build_election_stream(&mut self, tx: mpsc::Unv){
+	// 	<&T>::build_election_stream(&mut &**self)
+	// }
+
+	// fn vote_notification(&mut self)->Option<&mut mpsc::UnboundedReceiver<VoteData<B>>>{
+	// 	<&T>::vote_notification(&mut &**self)
+	// }
 }
 
 /// Checks if the current active native block authoring implementation can author with the runtime

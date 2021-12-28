@@ -1288,6 +1288,10 @@ impl<B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for NetworkSer
 		NetworkService::is_major_syncing(self)
 	}
 
+	fn local_peer_id(&mut self)->Option<PeerId>{
+		Some(*NetworkService::local_peer_id(self))
+	}
+
 	fn is_offline(&mut self) -> bool {
 		self.num_connected.load(Ordering::Relaxed) == 0
 	}
@@ -1315,11 +1319,19 @@ impl<B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for NetworkSer
 	fn send_election_result(&mut self){
 		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendElectionResult);
 	}
+
+	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<VoteData<B>>){
+		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::BuildVoteStream(tx));
+	}
 }
 
 impl<'a, B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for &'a NetworkService<B, H> {
 	fn is_major_syncing(&mut self) -> bool {
 		NetworkService::is_major_syncing(self)
+	}
+
+	fn local_peer_id(&mut self)->Option<PeerId>{
+		Some(*NetworkService::local_peer_id(self))
 	}
 
 	fn is_offline(&mut self) -> bool {
@@ -1349,6 +1361,10 @@ impl<'a, B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for &'a Ne
 
 	fn send_election_result(&mut self){
 		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendElectionResult);
+	}
+
+	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<VoteData<B>>){
+		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::BuildVoteStream(tx));
 	}
 }
 
@@ -1468,6 +1484,8 @@ enum ServiceToWorkerMsg<B: BlockT, H: ExHashT> {
 	SendVote(VoteData<B>, mpsc::UnboundedSender<Option<usize>>),
 	PrepareVote(NumberFor<B>, Duration),
 	SendElectionResult,
+	BuildVoteStream(mpsc::UnboundedSender<VoteData<B>>),
+	BuildElectionStream(mpsc::UnboundedSender<Vec<(Vec<u8>, u64)>>),
 	PropagateTransaction(H),
 	PropagateTransactions,
 
@@ -1624,7 +1642,13 @@ impl<B: BlockT + 'static, H: ExHashT> Future for NetworkWorker<B, H> {
 				},
 				ServiceToWorkerMsg::SendElectionResult=>{
 					this.ps_handler_controller.send_election_result();
-				}
+				},
+				ServiceToWorkerMsg::BuildVoteStream(tx)=>{
+					this.ps_handler_controller.build_vote_stream(tx);
+				},
+				ServiceToWorkerMsg::BuildElectionStream(tx)=>{
+					// this.ps_handler_controller.build_election_stream(tx);
+				},
 
 				ServiceToWorkerMsg::PropagateTransaction(hash) =>{
 					this.tx_handler_controller.propagate_transaction(hash);
