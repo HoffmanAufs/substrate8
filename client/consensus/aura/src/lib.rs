@@ -131,27 +131,26 @@ fn slot_author<P: Pair>(slot: Slot, authorities: &[AuthorityId<P>]) -> Option<&A
 	);
 
 	Some(current_author)
-	// Some(&authorities[0])
 }
 
-fn claim_delay(author_len: Option<usize>, election_result: Vec<Option<usize>>)->Option<Duration>{
-	if let Some(author_len) = author_len{
-		let election_head_len = election_result.iter().filter_map(
-			|rand|rand.as_ref()).fold(0, |r, &x|if x == 0 {r+1} else {r});
+// fn claim_delay(author_len: Option<usize>, election_result: Vec<Option<usize>>)->Option<Duration>{
+// 	if let Some(author_len) = author_len{
+// 		let election_head_len = election_result.iter().filter_map(
+// 			|rand|rand.as_ref()).fold(0, |r, &x|if x == 0 {r+1} else {r});
 		
-		// log::info!("election head len: {}", election_head_len);
-		if election_head_len*2 > author_len{
-			log::info!("Claim: elected count: {}, client/consensus/aura/src/lib.rs:137", election_head_len);
-			return Some(Duration::new(0, 0));
-		}
-		else{
-			log::info!("Not Claim: elected count: {}, client/consensus/aura/src/lib.rs:141", election_head_len);
-			return None;
-		}
-	}
-	log::info!("Not claim slot, client/consensus/aura/src/lib.rs:139");
-	return None;
-}
+// 		// log::info!("election head len: {}", election_head_len);
+// 		if election_head_len*2 > author_len{
+// 			log::info!("Claim: elected count: {}, client/consensus/aura/src/lib.rs:137", election_head_len);
+// 			return Some(Duration::new(0, 0));
+// 		}
+// 		else{
+// 			log::info!("Not Claim: elected count: {}, client/consensus/aura/src/lib.rs:141", election_head_len);
+// 			return None;
+// 		}
+// 	}
+// 	log::info!("Not claim slot, client/consensus/aura/src/lib.rs:139");
+// 	return None;
+// }
 
 /// Parameters of [`start_aura`].
 pub struct StartAuraParams<C, SC, I, PF, SO, L, CIDP, BS, CAW> {
@@ -256,7 +255,7 @@ where
 		max_block_proposal_slot_portion,
 	});
 
-	Ok(sc_consensus_aura_slots::aura_slot_worker(
+	Ok(sc_consensus_aura_slots::aura_slot_worker_4(
 		slot_duration,
 		client.clone(),
 		select_chain,
@@ -424,7 +423,7 @@ where
 
 	fn claim_slot(
 		&mut self,
-		header: &B::Header,
+		_header: &B::Header,
 		slot: Slot,
 		epoch_data: &Self::EpochData,
 	) -> Option<Self::Claim> {
@@ -637,8 +636,8 @@ enum Error<B: BlockT> {
 	HeaderUnsealed(B::Hash),
 	#[display(fmt = "Header {:?} has a bad seal", _0)]
 	HeaderBadSeal(B::Hash),
-	#[display(fmt = "Slot Author not found")]
-	SlotAuthorNotFound,
+	// #[display(fmt = "Slot Author not found")]
+	// SlotAuthorNotFound,
 	#[display(fmt = "Bad signature on {:?}", _0)]
 	BadSignature(B::Hash),
 	Client(sp_blockchain::Error),

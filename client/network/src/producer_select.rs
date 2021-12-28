@@ -117,7 +117,10 @@ impl ProducerSelectHandlerPrototype {
 			// vote_open_duration: Duration::new(0,0),
 		};
 
-		let controller = ProducerSelectHandlerController { to_handler};
+		let controller = ProducerSelectHandlerController { 
+			to_handler,
+			// vote_notification_rx: Some(vote_notification_rx),
+		};
 
 		Ok((handler, controller))
 	}
@@ -125,7 +128,7 @@ impl ProducerSelectHandlerPrototype {
 
 pub struct ProducerSelectHandlerController<B: BlockT>{
     to_handler: mpsc::UnboundedSender<ToHandler<B>>,
-	// vote_notification_rx: mpsc::UnboundedReceiver<VoteData<B>>,
+	// vote_notification_rx: Option<mpsc::UnboundedReceiver<VoteData<B>>>,
 }
 
 impl<B: BlockT> ProducerSelectHandlerController<B>{
@@ -149,9 +152,13 @@ impl<B: BlockT> ProducerSelectHandlerController<B>{
 		let _ = self.to_handler.unbounded_send(ToHandler::SendElectionResult);
 	}
 
-	pub fn build_vote_stream(&self, tx: mpsc::UnboundedSender<VoteData<B>>){
+	pub fn build_vote_stream(&self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){
 		let _ = self.to_handler.unbounded_send(ToHandler::BuildVoteStream(tx));
 	}
+
+	// pub fn take_vote_notification_rx(&mut self)->Option<mpsc::UnboundedReceiver<VoteData<B>>>{
+	// 	self.vote_notification_rx.take()
+	// }
 }
 
 enum ToHandler<B: BlockT> {
@@ -160,7 +167,7 @@ enum ToHandler<B: BlockT> {
 	SendVote(VoteData<B>, mpsc::UnboundedSender<Option<usize>>),
 	PrepareVote(NumberFor<B>, Duration),
 	SendElectionResult,
-	BuildVoteStream(mpsc::UnboundedSender<VoteData<B>>),
+	BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
 }
 
 /// Handler for transactions. Call [`TransactionsHandler::run`] to start the processing.
@@ -199,7 +206,7 @@ pub struct ProducerSelectHandler<B: BlockT + 'static, H: ExHashT> {
 
 	pending_response: Option<mpsc::UnboundedSender<Option<usize>>>,
 
-	vote_notification_tx: Option<mpsc::UnboundedSender<VoteData<B>>>,
+	vote_notification_tx: Option<mpsc::UnboundedSender<(VoteData<B>, PeerId)>>,
 }
 
 struct VoteRecvConfig<B: BlockT>{
@@ -332,29 +339,34 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 						match web_msg {
 							WebMessage::VoteData(vote_data) => {
 								// self.vote_notification_tx.clone().map(|v|v.unbounded_send(vote_data.clone()));
-								self.vote_notification_tx.as_ref().map(|v|v.unbounded_send(vote_data.clone()));
+								self.vote_notification_tx.as_ref().map(|v|{
+									// log::info!("<<<< recv: {:?} from: {:?}", vote_data, remote);
+									v.unbounded_send((vote_data.clone(), remote));
+								});
+								// self.vote_notification_tx.unbounded_send(vote_data.clone());
 
 								// let _ = self.vote_notification_tx.unbounded_send(vote_data.clone());
-								if let Some(vote_recv_config) = &self.vote_recv_config{
-									if let Ok(elapsed) = vote_recv_config.begin_time.elapsed(){
-										let VoteData{vote_num, sync_id} = vote_data;
-										if elapsed > vote_recv_config.open_duration{
-											log::info!("<<<< (XX) timeout: {}, {:?} from: {:?}", vote_num, sync_id, remote);
-											continue;
-										}
 
-										if sync_id != vote_recv_config.sync_number{
-											log::info!("<<<< (XX) sync error: accept: {}, recv: {} from: {:?}", 
-											vote_recv_config.sync_number, sync_id, remote);
-											continue;
-										}
+								// if let Some(vote_recv_config) = &self.vote_recv_config{
+								// 	if let Ok(elapsed) = vote_recv_config.begin_time.elapsed(){
+								// 		let VoteData{vote_num, sync_id} = vote_data;
+								// 		if elapsed > vote_recv_config.open_duration{
+								// 			log::info!("<<<< (XX) timeout: {}, {:?} from: {:?}", vote_num, sync_id, remote);
+								// 			continue;
+								// 		}
 
-										log::info!("<<<< (Ok) valid vote: {}, {:?} from: {:?}", vote_num, sync_id, remote);
-										self.vote_map.insert(vote_num, remote.clone());
-										// let encode_remote = remote.to_bytes().encode();
-										// log::info!("remote encode: {}", encode_remote);
-									}
-								}
+								// 		if sync_id != vote_recv_config.sync_number{
+								// 			log::info!("<<<< (XX) sync error: accept: {}, recv: {} from: {:?}", 
+								// 			vote_recv_config.sync_number, sync_id, remote);
+								// 			continue;
+								// 		}
+
+								// 		log::info!("<<<< (Ok) valid vote: {}, {:?} from: {:?}", vote_num, sync_id, remote);
+								// 		self.vote_map.insert(vote_num, remote.clone());
+								// 		// let encode_remote = remote.to_bytes().encode();
+								// 		// log::info!("remote encode: {}", encode_remote);
+								// 	}
+								// }
 							},
 							WebMessage::ElectionData(election_value_vec) =>{
 								// let election_vec = election_vec_value.iter().map()

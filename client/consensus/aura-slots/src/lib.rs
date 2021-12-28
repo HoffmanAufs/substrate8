@@ -36,7 +36,7 @@ use slots::Slots;
 use codec::{Decode, Encode};
 
 use rand::Rng;
-use futures::{future::Either, Future, TryFutureExt, channel::mpsc};
+use futures::{future::Either, Future, TryFutureExt, channel::mpsc, FutureExt};
 
 use futures_timer::Delay;
 use log::{debug, error, info, warn};
@@ -564,6 +564,103 @@ impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H);
 impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H, I);
 impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H, I, J);
 
+/// worker 4
+pub async fn aura_slot_worker_4<B, C, S, W, T, SO, CIDP, CAW>(
+	slot_duration: SlotDuration<T>,
+	client: Arc<C>,
+	select_chain: S,
+	mut worker: W,
+	mut sync_oracle: SO,
+	create_inherent_data_providers: CIDP,
+	can_author_with: CAW,
+) where
+	B: BlockT,
+	C: BlockchainEvents<B> + Sync + Send + 'static, 
+	S: SelectChain<B>,
+	// W: SlotWorker<B, Proof>,
+	W: SimpleSlotWorker<B> + Send,
+	SO: SyncOracle<B> + Send,
+	T: SlotData + Clone,
+	CIDP: CreateInherentDataProviders<B, ()> + Send,
+	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
+	CAW: CanAuthorWith<B> + Send,
+{
+	// let SlotDuration(slot_duration) = slot_duration;
+	
+	let (vote_tx, mut vote_rx) = mpsc::unbounded();
+	sync_oracle.build_vote_stream(vote_tx);
+
+	// let mut vote_rx = match sync_oracle.take_vote_notification_rx(){
+	// 	Some(rx) => rx,
+	// 	None=>{
+	// 		log::info!("take vote rx err");
+	// 		return
+	// 	}
+	// };
+
+	let mut i = 0;
+	let chain_head = match select_chain.best_chain().await {
+		Ok(x) => x,
+		Err(e) => {
+			log::warn!(
+				target: "slots",
+				"Unable to author block in slot. No best block header: {:?}",
+				e,
+			);
+			// Let's try at the next slot..
+			return
+		},
+	};
+	let sync_id = chain_head.number();
+
+	loop{
+		futures::select!{
+			_ = Delay::new(Duration::new(1,0)).fuse()=>{
+				// log::info!(">>>> tick: send_vote");
+				let vote_data = VoteData::new(i, sync_id.clone());
+				let (tx, _) = mpsc::unbounded();
+				sync_oracle.send_vote(vote_data, tx);
+				i += 1;
+			},
+			recv_data = vote_rx.next()=>{
+				recv_data.map(|vote|log::info!("<<<< {:?}", vote));
+				// log::info!("recv vote: {:?}", recv_vote);
+			},
+		}
+	}
+
+	// let vote_notification = sync_oracle.vote_notification();
+
+	// let mut slots =
+	// 	Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
+
+	// let mut notification_stream = client.clone().import_notification_stream();
+
+	// loop {
+	// 	Delay::new(Duration::new(4,0)).await;
+
+	// 	// let notification_delay = Delay::new(Duration::new(0, 100_000_000));
+	// 	// match futures::future::select(client.import_notification_stream().next(), notification_delay).await{
+	// 	// 	Either::Left((n,_))=>{
+	// 	// 		n.map(|v|log::info!("block import: {}, aura_slot_worker()", v.header.number()));
+	// 	// 	},
+	// 	// 	Either::Right(_)=>{
+	// 	// 		log::info!("block import timeout, aura_slot_worker()");
+	// 	// 	}
+	// 	// }
+
+	// 	let notification_delay = Delay::new(Duration::new(0, 100_000_000));
+	// 	match futures::future::select(rx.next(), notification_delay).await{
+	// 		Either::Left((n,_))=>{
+	// 			log::info!("recv notification: {:?}", n);
+	// 		},
+	// 		Either::Right(_)=>{
+	// 			log::info!("vote notificaiton timeout, aura_slot_worker()");
+	// 		}
+	// 	}
+	// }
+}
+
 /// Start a new slot worker.
 ///
 /// Every time a new slot is triggered, `worker.on_slot` is called and the future it returns is
@@ -681,7 +778,7 @@ pub async fn aura_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 		}
 
 		if let Err(err) =
-			can_author_with.can_author_with(&BlockId::Hash(slot_info.chain_head.hash()))
+			can_author_with.can_author_with(&BlockId::Hash(chain_head.hash()))
 		{
 			warn!(
 				target: "slots",

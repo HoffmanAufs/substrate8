@@ -242,10 +242,9 @@ pub trait SyncOracle<B: BlockT> {
 	fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration);
 	fn send_vote(&mut self, vote_data: VoteData<B>, tx: mpsc::UnboundedSender<Option<usize>>);
 	fn send_election_result(&mut self);
-	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<VoteData<B>>);
+	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>);
 
 	// fn build_election_stream(&mut self);
-	// fn vote_notification(&mut self)->Option<&mut mpsc::UnboundedReceiver<VoteData<B>>>;
 }
 
 /// A synchronization oracle for when there is no network.
@@ -274,7 +273,7 @@ impl<B: BlockT> SyncOracle<B> for NoNetwork {
 	fn prepare_vote(&mut self, _: NumberFor<B>, _: Duration){}
 	fn send_vote(&mut self, _: VoteData<B>, _: mpsc::UnboundedSender<Option<usize>>){}
 	fn send_election_result(&mut self){}
-	fn build_vote_stream(&mut self, _: mpsc::UnboundedSender<VoteData<B>>){}
+	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){}
 	// fn build_election_stream(&mut self){}
 }
 
@@ -320,16 +319,13 @@ where
 		<&T>::send_election_result(&mut &**self)
 	}
 
-	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<VoteData<B>>){
+	// fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<VoteData<B>>){
+	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){
 		<&T>::build_vote_stream(&mut &**self, tx)
 	}
 
 	// fn build_election_stream(&mut self, tx: mpsc::Unv){
 	// 	<&T>::build_election_stream(&mut &**self)
-	// }
-
-	// fn vote_notification(&mut self)->Option<&mut mpsc::UnboundedReceiver<VoteData<B>>>{
-	// 	<&T>::vote_notification(&mut &**self)
 	// }
 }
 

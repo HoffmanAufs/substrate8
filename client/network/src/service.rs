@@ -1289,7 +1289,8 @@ impl<B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for NetworkSer
 	}
 
 	fn local_peer_id(&mut self)->Option<PeerId>{
-		Some(*NetworkService::local_peer_id(self))
+		Some(self.local_peer_id.clone())
+		// Some(*NetworkService::local_peer_id(self))
 	}
 
 	fn is_offline(&mut self) -> bool {
@@ -1320,9 +1321,13 @@ impl<B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for NetworkSer
 		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendElectionResult);
 	}
 
-	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<VoteData<B>>){
+	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){
 		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::BuildVoteStream(tx));
 	}
+	// fn take_vote_notification_rx(&mut self)->Option<mpsc::UnboundedReceiver<VoteData<B>>>{
+	// 	self.to_worker.take_vote_notification_rx()
+	// 	NetworkService::
+	// }
 }
 
 impl<'a, B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for &'a NetworkService<B, H> {
@@ -1331,7 +1336,8 @@ impl<'a, B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for &'a Ne
 	}
 
 	fn local_peer_id(&mut self)->Option<PeerId>{
-		Some(*NetworkService::local_peer_id(self))
+		Some(self.local_peer_id.clone())
+		// Some(*NetworkService::local_peer_id(self))
 	}
 
 	fn is_offline(&mut self) -> bool {
@@ -1363,9 +1369,12 @@ impl<'a, B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for &'a Ne
 		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendElectionResult);
 	}
 
-	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<VoteData<B>>){
+	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){
 		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::BuildVoteStream(tx));
 	}
+	// fn take_vote_notification_rx(&mut self)->Option<mpsc::UnboundedReceiver<VoteData<B>>>{
+	// 	self.to_worker.take_vote_notification_rx()
+	// }
 }
 
 impl<B: BlockT, H: ExHashT> sc_consensus::JustificationSyncLink<B> for NetworkService<B, H> {
@@ -1484,7 +1493,7 @@ enum ServiceToWorkerMsg<B: BlockT, H: ExHashT> {
 	SendVote(VoteData<B>, mpsc::UnboundedSender<Option<usize>>),
 	PrepareVote(NumberFor<B>, Duration),
 	SendElectionResult,
-	BuildVoteStream(mpsc::UnboundedSender<VoteData<B>>),
+	BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
 	BuildElectionStream(mpsc::UnboundedSender<Vec<(Vec<u8>, u64)>>),
 	PropagateTransaction(H),
 	PropagateTransactions,
