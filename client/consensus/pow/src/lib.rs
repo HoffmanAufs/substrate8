@@ -563,15 +563,7 @@ where
 
 			if sync_oracle.is_major_syncing() {
 				debug!(target: "pow", "Skipping proposal due to sync.");
-				worker.lock().on_major_syncing();
-				return
-			}
-
-			let best_header = match select_chain.best_chain().await {
-				Ok(x) => x,
-				Err(err) => {
-					warn!(
-						target: "pow",
+				worker.lock().on_major_syncing();,,
 						"Unable to pull new block for authoring. \
 						 Select best chain error: {:?}",
 						err

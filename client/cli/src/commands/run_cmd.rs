@@ -45,6 +45,10 @@ pub struct RunCmd {
 	#[structopt(long)]
 	pub validator: bool,
 
+	/// committee
+	#[structopt(long)]
+	pub committee: bool,
+
 	/// Disable GRANDPA voter when running in validator mode, otherwise disable the GRANDPA
 	/// observer.
 	#[structopt(long)]

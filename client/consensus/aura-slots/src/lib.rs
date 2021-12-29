@@ -613,6 +613,10 @@ pub async fn aura_slot_worker_4<B, C, S, W, T, SO, CIDP, CAW>(
 	};
 	let sync_id = chain_head.number();
 
+	let block_hash = BlockId::Hash(chain_head.hash());
+	let result = can_author_with.can_author_with(&block_hash);
+	log::info!("can_author_with result: {:?}", result);
+
 	loop{
 		futures::select!{
 			_ = Delay::new(Duration::new(1,0)).fuse()=>{
