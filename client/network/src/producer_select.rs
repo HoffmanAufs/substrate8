@@ -338,12 +338,9 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 					if let Ok(web_msg) = <WebMessage<B> as Decode>::decode(&mut message.as_ref()){
 						match web_msg {
 							WebMessage::VoteData(vote_data) => {
-								// self.vote_notification_tx.clone().map(|v|v.unbounded_send(vote_data.clone()));
 								self.vote_notification_tx.as_ref().map(|v|{
-									// log::info!("<<<< recv: {:?} from: {:?}", vote_data, remote);
 									v.unbounded_send((vote_data.clone(), remote));
 								});
-								// self.vote_notification_tx.unbounded_send(vote_data.clone());
 
 								// let _ = self.vote_notification_tx.unbounded_send(vote_data.clone());
 
@@ -437,13 +434,13 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 		// let to_send = self.vote_map.iter().map(|(_, v)|v.to_bytes()).collect::<Vec<_>>().encode();
 
 		for (_, who) in self.vote_map.iter(){
-			if who == local_peer_id{
-				continue;
-			}
+			// if who == local_peer_id{
+			// 	continue;
+			// }
 		// for (who, peer) in self.peers.iter_mut() {
 			propagated_numbers += 1;
 
-            log::info!(">>>> Election to {:?}, client/network/src/producer_select.rs:396", who);
+            log::info!(">>>> Election to {:?}, client/network/src/producer_select.rs:446", who);
             self.service.write_notification(
                 who.clone(),
                 self.protocol_name.clone(),
@@ -494,6 +491,14 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
                 to_send.clone(),
             );
 		}
+
+		let local_peer_id = self.service.local_peer_id();
+		log::info!(">>>> {} to {:?}, client/network/src/producer_select.rs:439", vote_num, local_peer_id);
+		self.service.write_notification(
+			local_peer_id.clone(),
+			self.protocol_name.clone(),
+			to_send.clone(),
+		);
 
 		if let Some(ref metriecs) = self.metrics {
 			metriecs.propagated_numbers.inc_by(propagated_numbers as _)

@@ -571,6 +571,19 @@ where
 					return
 				},
 			};
+
+			let best_header = match select_chain.best_chain().await {
+				Ok(x) => x,
+				Err(err) => {
+					warn!(
+						target: "pow",
+						"Unable to pull new block for authoring. \
+						 Select best chain error: {:?}",
+						err
+					);
+					return
+				},
+			};
 			let best_hash = best_header.hash();
 
 			if let Err(err) = can_author_with.can_author_with(&BlockId::Hash(best_hash)) {
