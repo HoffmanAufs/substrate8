@@ -759,9 +759,9 @@ impl<B: BlockT + 'static, H: ExHashT> NetworkService<B, H> {
 	) {
 		// We clone the `NotificationsSink` in order to be able to unlock the network-wide
 		// `peers_notifications_sinks` mutex as soon as possible.
-		// if protocol.ne("/paritytech/grandpa/1"){
-		// 	log::info!("write notification: {}", protocol);
-		// }
+		if protocol.eq("/sup/producer-select/1"){
+			log::info!("write notification: {}", protocol);
+		}
 
 		let sink = {
 			let peers_notifications_sinks = self.peers_notifications_sinks.lock();
@@ -1311,6 +1311,16 @@ impl<B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for NetworkSer
 
 	fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration){
 		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::PrepareVote(sync_number, duration));
+		// let (tx, pending_response) = oneshot::unbounded();
+		// let _ = self.to_worker.unbounded_send(
+		// 	ServiceToWorkerMsg::Request {
+		// 		target: PeerId,
+		// 		protocol: Cow<'static, str>,
+		// 		request: Vec<u8>,
+		// 		pending_response: oneshot::Sender<Result<Vec<u8>, RequestFailure>>,
+		// 		connect: IfDisconnected,
+		// 	},
+		// );
 	}
 
 	fn send_vote(&mut self, vote_data: VoteData<B>, tx: mpsc::UnboundedSender<Option<usize>>){
@@ -1361,8 +1371,23 @@ impl<'a, B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for &'a Ne
 		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::PrepareVote(sync_number, duration));
 	}
 
-	fn send_vote(&mut self, vote_data: VoteData<B>, tx: mpsc::UnboundedSender<Option<usize>>){
+	fn send_vote(&mut self, vote_data: VoteData<B>, _tx: mpsc::UnboundedSender<Option<usize>>){
 		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendVote(vote_data, tx));
+		// log::info!(">>>> send_vote: {:?}", vote_data);
+
+		// let (tx, _rx) = oneshot::channel();
+		// let target = self.local_peer_id;
+		// let request = vote_data.encode();
+		// let protocol = Cow::from("/sup/producer-select/1");
+		// let connect = IfDisconnected::ImmediateError;
+
+		// self.start_request(
+		// 	target, 
+		// 	protocol,
+		// 	request,
+		// 	tx,
+		// 	connect,
+		// );
 	}
 
 	fn send_election_result(&mut self){
@@ -1495,6 +1520,7 @@ enum ServiceToWorkerMsg<B: BlockT, H: ExHashT> {
 	SendElectionResult,
 	BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
 	BuildElectionStream(mpsc::UnboundedSender<Vec<(Vec<u8>, u64)>>),
+
 	PropagateTransaction(H),
 	PropagateTransactions,
 

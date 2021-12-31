@@ -92,6 +92,7 @@ impl<B: BlockT> Link<B> for BufferedLinkSender<B> {
 		count: usize,
 		results: Vec<(BlockImportResult<B>, B::Hash)>,
 	) {
+		// log::info!("block_processed");
 		let _ = self
 			.tx
 			.unbounded_send(BlockImportWorkerMsg::BlocksProcessed(imported, count, results));

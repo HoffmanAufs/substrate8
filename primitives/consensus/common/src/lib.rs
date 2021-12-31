@@ -236,14 +236,16 @@ pub trait SyncOracle<B: BlockT> {
 
 	// method for consensus
 	fn local_peer_id(&mut self)->Option<PeerId>;
+	fn is_author(&mut self)->bool;
+
 	fn send_number(&mut self, n: u64, pending_response: mpsc::UnboundedSender<u64>);
 	fn propagate_random(&mut self, vote_num: u64, parent_id: NumberFor<B>);
-	fn is_author(&mut self)->bool;
 	fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration);
 	fn send_vote(&mut self, vote_data: VoteData<B>, tx: mpsc::UnboundedSender<Option<usize>>);
 	fn send_election_result(&mut self);
 	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>);
 
+	// fn call_network_service(&mut self, _: VoteElectionRequst<B>);
 	// fn build_election_stream(&mut self);
 }
 
@@ -267,6 +269,8 @@ impl<B: BlockT> SyncOracle<B> for NoNetwork {
 	fn is_author(&mut self)->bool{
 		false
 	}
+
+	// fn call_network_service(&mut self, _: VoteElectionRequst<B>);
 
 	fn send_number(&mut self, _: u64, _pending_response: mpsc::UnboundedSender<u64>){}
 	fn propagate_random(&mut self, _: u64, _: NumberFor<B>){}
