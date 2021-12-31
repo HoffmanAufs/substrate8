@@ -192,6 +192,158 @@ pub struct StartAuraParams<C, SC, I, PF, SO, L, CIDP, BS, CAW> {
 }
 
 /// Start the aura worker. The returned future should be run in a futures executor.
+pub fn start_aura_author<P, B, C, SC, I, PF, SO, L, CIDP, BS, CAW, Error>(
+	StartAuraParams {
+		slot_duration,
+		client,
+		select_chain,
+		block_import,
+		proposer_factory,
+		sync_oracle,
+		justification_sync_link,
+		create_inherent_data_providers,
+		force_authoring,
+		backoff_authoring_blocks,
+		keystore,
+		can_author_with,
+		block_proposal_slot_portion,
+		max_block_proposal_slot_portion,
+		telemetry,
+	}: StartAuraParams<C, SC, I, PF, SO, L, CIDP, BS, CAW>,
+) -> Result<impl Future<Output = ()>, sp_consensus::Error>
+where
+	P: Pair + Send + Sync,
+	P::Public: AppPublic + Hash + Member + Encode + Decode,
+	P::Signature: TryFrom<Vec<u8>> + Hash + Member + Encode + Decode,
+	B: BlockT,
+	C: ProvideRuntimeApi<B> 
+		+ BlockchainEvents<B> 
+		+ BlockOf 
+		+ ProvideCache<B> 
+		+ AuxStore 
+		+ HeaderBackend<B> 
+		+ Send 
+		+ Sync
+		+ 'static,
+	// C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + AuxStore + HeaderBackend<B> + Send + Sync,
+	C::Api: AuraApi<B, AuthorityId<P>>,
+	SC: SelectChain<B>,
+	I: BlockImport<B, Transaction = sp_api::TransactionFor<C, B>> + Send + Sync + 'static,
+	PF: Environment<B, Error = Error> + Send + Sync + 'static,
+	PF::Proposer: Proposer<B, Error = Error, Transaction = sp_api::TransactionFor<C, B>>,
+	SO: SyncOracle<B> + Send + Sync + Clone,
+	L: sc_consensus::JustificationSyncLink<B>,
+	CIDP: CreateInherentDataProviders<B, ()> + Send,
+	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
+	BS: BackoffAuthoringBlocksStrategy<NumberFor<B>> + Send + 'static,
+	CAW: CanAuthorWith<B> + Send,
+	Error: std::error::Error + Send + From<sp_consensus::Error> + 'static,
+{
+	// Ok(sc_consensus_aura_slots::aura_slot_worker_2(client, select_chain))
+
+	let worker = build_aura_worker::<P, _, _, _, _, _, _, _, _>(BuildAuraWorkerParams {
+		client: client.clone(),
+		block_import,
+		proposer_factory,
+		keystore,
+		sync_oracle: sync_oracle.clone(),
+		justification_sync_link,
+		force_authoring,
+		backoff_authoring_blocks,
+		telemetry,
+		block_proposal_slot_portion,
+		max_block_proposal_slot_portion,
+	});
+
+	Ok(sc_consensus_aura_slots::aura_author_slot_worker(
+		slot_duration,
+		client.clone(),
+		select_chain,
+		worker,
+		sync_oracle,
+		create_inherent_data_providers,
+		can_author_with,
+	))
+}
+
+
+/// Start the aura worker. The returned future should be run in a futures executor.
+pub fn start_aura_committee<P, B, C, SC, I, PF, SO, L, CIDP, BS, CAW, Error>(
+	StartAuraParams {
+		slot_duration,
+		client,
+		select_chain,
+		block_import,
+		proposer_factory,
+		sync_oracle,
+		justification_sync_link,
+		create_inherent_data_providers,
+		force_authoring,
+		backoff_authoring_blocks,
+		keystore,
+		can_author_with,
+		block_proposal_slot_portion,
+		max_block_proposal_slot_portion,
+		telemetry,
+	}: StartAuraParams<C, SC, I, PF, SO, L, CIDP, BS, CAW>,
+) -> Result<impl Future<Output = ()>, sp_consensus::Error>
+where
+	P: Pair + Send + Sync,
+	P::Public: AppPublic + Hash + Member + Encode + Decode,
+	P::Signature: TryFrom<Vec<u8>> + Hash + Member + Encode + Decode,
+	B: BlockT,
+	C: ProvideRuntimeApi<B> 
+		+ BlockchainEvents<B> 
+		+ BlockOf 
+		+ ProvideCache<B> 
+		+ AuxStore 
+		+ HeaderBackend<B> 
+		+ Send 
+		+ Sync
+		+ 'static,
+	// C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + AuxStore + HeaderBackend<B> + Send + Sync,
+	C::Api: AuraApi<B, AuthorityId<P>>,
+	SC: SelectChain<B>,
+	I: BlockImport<B, Transaction = sp_api::TransactionFor<C, B>> + Send + Sync + 'static,
+	PF: Environment<B, Error = Error> + Send + Sync + 'static,
+	PF::Proposer: Proposer<B, Error = Error, Transaction = sp_api::TransactionFor<C, B>>,
+	SO: SyncOracle<B> + Send + Sync + Clone,
+	L: sc_consensus::JustificationSyncLink<B>,
+	CIDP: CreateInherentDataProviders<B, ()> + Send,
+	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
+	BS: BackoffAuthoringBlocksStrategy<NumberFor<B>> + Send + 'static,
+	CAW: CanAuthorWith<B> + Send,
+	Error: std::error::Error + Send + From<sp_consensus::Error> + 'static,
+{
+	// Ok(sc_consensus_aura_slots::aura_slot_worker_2(client, select_chain))
+
+	let worker = build_aura_worker::<P, _, _, _, _, _, _, _, _>(BuildAuraWorkerParams {
+		client: client.clone(),
+		block_import,
+		proposer_factory,
+		keystore,
+		sync_oracle: sync_oracle.clone(),
+		justification_sync_link,
+		force_authoring,
+		backoff_authoring_blocks,
+		telemetry,
+		block_proposal_slot_portion,
+		max_block_proposal_slot_portion,
+	});
+
+	Ok(sc_consensus_aura_slots::aura_committee_slot_worker(
+		slot_duration,
+		client.clone(),
+		select_chain,
+		worker,
+		sync_oracle,
+		create_inherent_data_providers,
+		can_author_with,
+	))
+}
+
+
+/// Start the aura worker. The returned future should be run in a futures executor.
 pub fn start_aura<P, B, C, SC, I, PF, SO, L, CIDP, BS, CAW, Error>(
 	StartAuraParams {
 		slot_duration,
@@ -255,7 +407,7 @@ where
 		max_block_proposal_slot_portion,
 	});
 
-	Ok(sc_consensus_aura_slots::aura_slot_worker_4(
+	Ok(sc_consensus_aura_slots::aura_author_slot_worker(
 		slot_duration,
 		client.clone(),
 		select_chain,
@@ -427,6 +579,7 @@ where
 		slot: Slot,
 		epoch_data: &Self::EpochData,
 	) -> Option<Self::Claim> {
+
 		// let mut election_result = vec![];
 		// let authorities_len = self.authorities_len(&epoch_data);
 

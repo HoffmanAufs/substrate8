@@ -565,6 +565,84 @@ impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H);
 impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H, I);
 impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H, I, J);
 
+/// aura author worker
+pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
+	slot_duration: SlotDuration<T>,
+	client: Arc<C>,
+	select_chain: S,
+	mut worker: W,
+	mut sync_oracle: SO,
+	create_inherent_data_providers: CIDP,
+	can_author_with: CAW,
+) where
+	B: BlockT,
+	C: BlockchainEvents<B> + Sync + Send + 'static, 
+	S: SelectChain<B>,
+	W: SimpleSlotWorker<B> + Send,
+	SO: SyncOracle<B> + Send,
+	T: SlotData + Clone,
+	CIDP: CreateInherentDataProviders<B, ()> + Send,
+	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
+	CAW: CanAuthorWith<B> + Send,
+{
+	let SlotDuration(slot_duration) = slot_duration;
+
+	let mut slots =
+		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
+
+	loop {
+		let slot_info = match slots.next_slot().await {
+			Ok(r) => r,
+			Err(e) => {
+				warn!(target: "slots", "Error while polling for next slot: {:?}", e);
+				return
+			},
+		};
+		Delay::new(Duration::from_millis(500)).await;
+
+		sync_oracle.ve_request(VoteElectionRequest::PropagateNumber());
+
+		log::info!("auth: {}", slot_info.slot);
+	}
+}
+
+/// aura committee worker
+pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
+	slot_duration: SlotDuration<T>,
+	client: Arc<C>,
+	select_chain: S,
+	mut worker: W,
+	mut sync_oracle: SO,
+	create_inherent_data_providers: CIDP,
+	can_author_with: CAW,
+) where
+	B: BlockT,
+	C: BlockchainEvents<B> + Sync + Send + 'static, 
+	S: SelectChain<B>,
+	W: SimpleSlotWorker<B> + Send,
+	SO: SyncOracle<B> + Send,
+	T: SlotData + Clone,
+	CIDP: CreateInherentDataProviders<B, ()> + Send,
+	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
+	CAW: CanAuthorWith<B> + Send,
+{
+	let SlotDuration(slot_duration) = slot_duration;
+
+	let mut slots =
+		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
+
+	loop {
+		let slot_info = match slots.next_slot().await {
+			Ok(r) => r,
+			Err(e) => {
+				warn!(target: "slots", "Error while polling for next slot: {:?}", e);
+				return
+			},
+		};
+		log::info!("comm: {}", slot_info.slot);
+	}
+}
+
 /// worker 4
 pub async fn aura_slot_worker_4<B, C, S, W, T, SO, CIDP, CAW>(
 	slot_duration: SlotDuration<T>,
