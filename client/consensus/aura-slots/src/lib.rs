@@ -44,7 +44,7 @@ use sc_consensus::{BlockImport, JustificationSyncLink};
 use sc_telemetry::{telemetry, TelemetryHandle, CONSENSUS_DEBUG, CONSENSUS_INFO, CONSENSUS_WARN};
 use sp_api::{ApiRef, ProvideRuntimeApi};
 use sp_arithmetic::traits::BaseArithmetic;
-use sp_consensus::{CanAuthorWith, Proposer, SelectChain, SlotData, SyncOracle, VoteData};
+use sp_consensus::{CanAuthorWith, Proposer, SelectChain, SlotData, SyncOracle, VoteData, VoteElectionRequest};
 use sp_consensus_slots::Slot;
 use sp_inherents::{CreateInherentDataProviders, InherentDataProvider};
 use sp_runtime::{
@@ -284,7 +284,7 @@ pub trait SimpleSlotWorker<B: BlockT> {
 		let &parent_id = slot_info.chain_head.number();
 
 		if self.sync_oracle().is_author(){
-			self.sync_oracle().prepare_vote(parent_id, Duration::new(2,0));
+			// self.sync_oracle().prepare_vote(parent_id, Duration::new(2,0));
 		}
 
 		Delay::new(Duration::new(0, 100_000_000)).await;
@@ -297,14 +297,15 @@ pub trait SimpleSlotWorker<B: BlockT> {
 		};
 
 		let vote_data = <VoteData<B>>::new(local_random, parent_id);
-		let (tx, mut rx) = mpsc::unbounded();
-		self.sync_oracle().send_vote(vote_data.clone(), tx);
+		let (tx, mut rx) = mpsc::unbounded::<Option<usize>>();
+		// self.sync_oracle().send_vote(vote_data.clone(), tx);
 
 		// delay after vote for send election result
 		Delay::new(Duration::new(2, 0)).await;
 
 		if self.sync_oracle().is_author(){
-			self.sync_oracle().send_election_result();
+			// self.sync_oracle().send_election_result();
+			self.sync_oracle().ve_request(VoteElectionRequest::ReturnElectionResult);
 		}
 
 		// delay receving election result
@@ -588,7 +589,9 @@ pub async fn aura_slot_worker_4<B, C, S, W, T, SO, CIDP, CAW>(
 	// let SlotDuration(slot_duration) = slot_duration;
 	
 	let (vote_tx, mut vote_rx) = mpsc::unbounded();
-	sync_oracle.build_vote_stream(vote_tx);
+	// sync_oracle.build_vote_stream(vote_tx);
+	sync_oracle.ve_request(VoteElectionRequest::BuildVoteStream(vote_tx));
+
 
 	// let mut vote_rx = match sync_oracle.take_vote_notification_rx(){
 	// 	Some(rx) => rx,
@@ -618,8 +621,9 @@ pub async fn aura_slot_worker_4<B, C, S, W, T, SO, CIDP, CAW>(
 			_ = Delay::new(Duration::new(1,0)).fuse()=>{
 				// log::info!(">>>> tick: send_vote");
 				let vote_data = VoteData::new(i, sync_id.clone());
-				let (tx, _) = mpsc::unbounded();
-				sync_oracle.send_vote(vote_data, tx);
+				// let (tx, _) = mpsc::unbounded();
+				// sync_oracle.send_vote(vote_data, tx);
+				sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
 				i += 1;
 			},
 			recv_data = vote_rx.next()=>{
@@ -688,7 +692,8 @@ pub async fn aura_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	let SlotDuration(slot_duration) = slot_duration;
 	
 	let (tx, mut rx) = mpsc::unbounded();
-	sync_oracle.build_vote_stream(tx);
+	// sync_oracle.build_vote_stream(tx);
+	sync_oracle.ve_request(VoteElectionRequest::BuildVoteStream(tx));
 
 	// let vote_notification = sync_oracle.vote_notification();
 

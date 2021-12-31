@@ -71,7 +71,7 @@ use log::{debug, error, info, trace, warn};
 use metrics::{Histogram, HistogramVec, MetricSources, Metrics};
 use parking_lot::Mutex;
 use sc_consensus::{BlockImportError, BlockImportStatus, ImportQueue, Link};
-use sp_consensus::VoteData;
+use sp_consensus::{VoteData, VoteElectionRequest};
 use sc_peerset::PeersetHandle;
 use sp_runtime::traits::{Block as BlockT, NumberFor};
 use sp_utils::mpsc::{tracing_unbounded, TracingUnboundedReceiver, TracingUnboundedSender};
@@ -1288,56 +1288,54 @@ impl<B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for NetworkSer
 		NetworkService::is_major_syncing(self)
 	}
 
-	fn local_peer_id(&mut self)->Option<PeerId>{
-		Some(self.local_peer_id.clone())
-		// Some(*NetworkService::local_peer_id(self))
-	}
-
 	fn is_offline(&mut self) -> bool {
 		self.num_connected.load(Ordering::Relaxed) == 0
 	}
 
-	fn send_number(&mut self, n: u64, _pending_response: mpsc::UnboundedSender<u64>){
-		log::info!("NerworkService send_number() 1, {}", n);
-	}
-
-	fn propagate_random(&mut self, vote_num: u64, parent_id: NumberFor<B>){
-		log::info!("NerworkService send_random() 1, {}, {}", vote_num, parent_id);
+	fn local_peer_id(&mut self)->Option<PeerId>{
+		Some(self.local_peer_id.clone())
 	}
 
 	fn is_author(&mut self)->bool{
+		if matches!(self.local_role, Role::Light){
+			false
+		}
+		else{
+			true
+		}
+	}
+
+	fn is_committee(&mut self)->bool{
 		matches!(self.local_role, Role::Authority)
 	}
 
-	fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration){
-		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::PrepareVote(sync_number, duration));
-		// let (tx, pending_response) = oneshot::unbounded();
-		// let _ = self.to_worker.unbounded_send(
-		// 	ServiceToWorkerMsg::Request {
-		// 		target: PeerId,
-		// 		protocol: Cow<'static, str>,
-		// 		request: Vec<u8>,
-		// 		pending_response: oneshot::Sender<Result<Vec<u8>, RequestFailure>>,
-		// 		connect: IfDisconnected,
-		// 	},
-		// );
-	}
-
-	fn send_vote(&mut self, vote_data: VoteData<B>, tx: mpsc::UnboundedSender<Option<usize>>){
-		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendVote(vote_data, tx));
-	}
-
-	fn send_election_result(&mut self){
-		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendElectionResult);
-	}
-
-	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){
-		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::BuildVoteStream(tx));
-	}
-	// fn take_vote_notification_rx(&mut self)->Option<mpsc::UnboundedReceiver<VoteData<B>>>{
-	// 	self.to_worker.take_vote_notification_rx()
-	// 	NetworkService::
+	// fn send_number(&mut self, n: u64, _pending_response: mpsc::UnboundedSender<u64>){
+	// 	log::info!("NerworkService send_number() 1, {}", n);
 	// }
+
+	// fn propagate_random(&mut self, vote_num: u64, parent_id: NumberFor<B>){
+	// 	log::info!("NerworkService send_random() 1, {}, {}", vote_num, parent_id);
+	// }
+
+	// fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration){
+	// 	let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::PrepareVote(sync_number, duration));
+	// }
+
+	// fn send_vote(&mut self, vote_data: VoteData<B>, tx: mpsc::UnboundedSender<Option<usize>>){
+	// 	let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendVote(vote_data, tx));
+	// }
+
+	// fn send_election_result(&mut self){
+	// 	let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendElectionResult);
+	// }
+
+	// fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){
+	// 	let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::BuildVoteStream(tx));
+	// }
+
+	fn ve_request(&mut self, request:VoteElectionRequest<B>){
+		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::VoteElectionRequest(request));
+	}
 }
 
 impl<'a, B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for &'a NetworkService<B, H> {
@@ -1345,61 +1343,55 @@ impl<'a, B: BlockT + 'static, H: ExHashT> sp_consensus::SyncOracle<B> for &'a Ne
 		NetworkService::is_major_syncing(self)
 	}
 
-	fn local_peer_id(&mut self)->Option<PeerId>{
-		Some(self.local_peer_id.clone())
-		// Some(*NetworkService::local_peer_id(self))
-	}
-
 	fn is_offline(&mut self) -> bool {
 		self.num_connected.load(Ordering::Relaxed) == 0
 	}
 
-	fn send_number(&mut self, n: u64, pending_response: mpsc::UnboundedSender<u64>){
-		// log::info!("NerworkService send_number() 2, {}", n);
-		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::PropagateNumber(n, pending_response));
-	}
-
-	fn propagate_random(&mut self, vote_num: u64, parent_id: NumberFor<B>){
-		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::PropagateRandom(vote_num, parent_id));
+	fn local_peer_id(&mut self)->Option<PeerId>{
+		Some(self.local_peer_id.clone())
 	}
 
 	fn is_author(&mut self)->bool{
+		// matches!(self.local_role, Role::Authority)
+		if matches!(self.local_role, Role::Light){
+			false
+		}
+		else{
+			true
+		}
+	}
+
+	fn is_committee(&mut self)->bool{
 		matches!(self.local_role, Role::Authority)
 	}
 
-	fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration){
-		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::PrepareVote(sync_number, duration));
-	}
-
-	fn send_vote(&mut self, vote_data: VoteData<B>, _tx: mpsc::UnboundedSender<Option<usize>>){
-		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendVote(vote_data, tx));
-		// log::info!(">>>> send_vote: {:?}", vote_data);
-
-		// let (tx, _rx) = oneshot::channel();
-		// let target = self.local_peer_id;
-		// let request = vote_data.encode();
-		// let protocol = Cow::from("/sup/producer-select/1");
-		// let connect = IfDisconnected::ImmediateError;
-
-		// self.start_request(
-		// 	target, 
-		// 	protocol,
-		// 	request,
-		// 	tx,
-		// 	connect,
-		// );
-	}
-
-	fn send_election_result(&mut self){
-		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendElectionResult);
-	}
-
-	fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){
-		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::BuildVoteStream(tx));
-	}
-	// fn take_vote_notification_rx(&mut self)->Option<mpsc::UnboundedReceiver<VoteData<B>>>{
-	// 	self.to_worker.take_vote_notification_rx()
+	// fn send_number(&mut self, n: u64, pending_response: mpsc::UnboundedSender<u64>){
+	// 	let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::PropagateNumber(n, pending_response));
 	// }
+
+	// fn propagate_random(&mut self, vote_num: u64, parent_id: NumberFor<B>){
+	// 	let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::PropagateRandom(vote_num, parent_id));
+	// }
+
+	// fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration){
+	// 	let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::PrepareVote(sync_number, duration));
+	// }
+
+	// fn send_vote(&mut self, vote_data: VoteData<B>, tx: mpsc::UnboundedSender<Option<usize>>){
+	// 	let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendVote(vote_data, tx));
+	// }
+
+	// fn send_election_result(&mut self){
+	// 	let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::SendElectionResult);
+	// }
+
+	// fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){
+	// 	let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::BuildVoteStream(tx));
+	// }
+
+	fn ve_request(&mut self, request:VoteElectionRequest<B>){
+		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::VoteElectionRequest(request));
+	}
 }
 
 impl<B: BlockT, H: ExHashT> sc_consensus::JustificationSyncLink<B> for NetworkService<B, H> {
@@ -1513,13 +1505,16 @@ pub enum NotificationSenderError {
 ///
 /// Each entry corresponds to a method of `NetworkService`.
 enum ServiceToWorkerMsg<B: BlockT, H: ExHashT> {
-	PropagateNumber(u64, mpsc::UnboundedSender<u64>),
-	PropagateRandom(u64, NumberFor<B>),
-	SendVote(VoteData<B>, mpsc::UnboundedSender<Option<usize>>),
-	PrepareVote(NumberFor<B>, Duration),
-	SendElectionResult,
-	BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
-	BuildElectionStream(mpsc::UnboundedSender<Vec<(Vec<u8>, u64)>>),
+	// producer select msg
+	// PropagateNumber(u64, mpsc::UnboundedSender<u64>),
+	// PropagateRandom(u64, NumberFor<B>),
+	// SendVote(VoteData<B>, mpsc::UnboundedSender<Option<usize>>),
+	// PrepareVote(NumberFor<B>, Duration),
+	// SendElectionResult,
+	// BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
+	// BuildElectionStream(mpsc::UnboundedSender<Vec<(Vec<u8>, u64)>>),
+	// vote request
+	VoteElectionRequest(VoteElectionRequest<B>),
 
 	PropagateTransaction(H),
 	PropagateTransactions,
@@ -1662,32 +1657,27 @@ impl<B: BlockT + 'static, H: ExHashT> Future for NetworkWorker<B, H> {
 					.clear_justification_requests(),
 
 				// produce select
-				ServiceToWorkerMsg::PropagateNumber(n, pending_response) =>{
-					// log::info!("NetworkWorker poll");
-					this.ps_handler_controller.propagate_number(n, pending_response);
-				},
-				ServiceToWorkerMsg::PropagateRandom(vote_num, parent_id) =>{
-					this.ps_handler_controller.propagate_random(vote_num, parent_id);
-				},
-				ServiceToWorkerMsg::SendVote(vote_data, tx) =>{
-					this.ps_handler_controller.send_vote(vote_data, tx);
-				},
-				ServiceToWorkerMsg::PrepareVote(sync_number, duration) =>{
-					this.ps_handler_controller.prepare_vote(sync_number, duration);
-				},
-				ServiceToWorkerMsg::SendElectionResult=>{
-					this.ps_handler_controller.send_election_result();
-				},
-				ServiceToWorkerMsg::BuildVoteStream(tx)=>{
-					this.ps_handler_controller.build_vote_stream(tx);
-				},
-				ServiceToWorkerMsg::BuildElectionStream(tx)=>{
-					// this.ps_handler_controller.build_election_stream(tx);
-				},
+				// ServiceToWorkerMsg::PropagateNumber(n, pending_response) =>
+				// 	this.ps_handler_controller.propagate_number(n, pending_response),
+				// ServiceToWorkerMsg::PropagateRandom(vote_num, parent_id) =>
+				// 	this.ps_handler_controller.propagate_random(vote_num, parent_id),
+				// ServiceToWorkerMsg::SendVote(vote_data, tx) =>
+				// 	this.ps_handler_controller.send_vote(vote_data, tx),
+				// ServiceToWorkerMsg::PrepareVote(sync_number, duration) =>
+				// 	this.ps_handler_controller.prepare_vote(sync_number, duration),
+				// ServiceToWorkerMsg::SendElectionResult=>
+				// 	this.ps_handler_controller.send_election_result(),
+				// ServiceToWorkerMsg::BuildVoteStream(tx)=>
+				// 	this.ps_handler_controller.build_vote_stream(tx),
+				// ServiceToWorkerMsg::BuildElectionStream(_)=>
+				// 	{},
 
-				ServiceToWorkerMsg::PropagateTransaction(hash) =>{
-					this.tx_handler_controller.propagate_transaction(hash);
-				},
+				// producer select request test
+				ServiceToWorkerMsg::VoteElectionRequest(request)=>
+					this.ps_handler_controller.handle_request(request),
+
+				ServiceToWorkerMsg::PropagateTransaction(hash) =>
+					this.tx_handler_controller.propagate_transaction(hash),
 				ServiceToWorkerMsg::PropagateTransactions =>
 					this.tx_handler_controller.propagate_transactions(),
 				ServiceToWorkerMsg::GetValue(key) =>

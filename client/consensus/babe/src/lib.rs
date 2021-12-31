@@ -759,7 +759,7 @@ where
 		let local_random = rng.gen::<u64>() & 0xFFFFu64;
 		vote_result.push(local_random);
 
-		self.sync_oracle().send_number(local_random, tx);
+		// self.sync_oracle().send_number(local_random, tx);
 
 		let author_count = self.authorities_len(&epoch_descriptor)?;
 
