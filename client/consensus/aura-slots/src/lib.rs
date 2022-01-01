@@ -37,6 +37,7 @@ use codec::{Decode, Encode};
 
 use rand::Rng;
 use futures::{future::Either, Future, TryFutureExt, channel::mpsc, FutureExt};
+use std::str::FromStr;
 
 use futures_timer::Delay;
 use log::{debug, error, info, warn};
@@ -587,9 +588,20 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 {
 	let SlotDuration(slot_duration) = slot_duration;
 
+	let chain_head = match select_chain.best_chain().await{
+		Ok(x)=>x,
+		Err(_)=>{
+			log::info!("author: chain_head err");
+			return
+		}
+	};
+	let sync_id = chain_head.number();
+
 	let mut slots =
 		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
 
+
+	let mut i = 0;
 	loop {
 		let slot_info = match slots.next_slot().await {
 			Ok(r) => r,
@@ -598,11 +610,21 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 				return
 			},
 		};
+
+		// let sync_id = <NumberFor<B> as FromStr>::from_str("10");
+		// let sync_id = <NumberFor<B> as Decode>::decode(&mut [0u8]);
+		let vote_data = <VoteData<B>>::new(i, sync_id.clone());
+		i+=1;
+
+		log::info!("auth: propagate vote: {:?}", vote_data);
 		Delay::new(Duration::from_millis(500)).await;
+		// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
+		// Delay::new(Duration::from_millis(100)).await;
+		// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
+		// Delay::new(Duration::from_millis(100)).await;
+		// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
 
-		sync_oracle.ve_request(VoteElectionRequest::PropagateNumber());
-
-		log::info!("auth: {}", slot_info.slot);
+		log::info!("auth:{}", slot_info.slot);
 	}
 }
 
@@ -628,8 +650,21 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 {
 	let SlotDuration(slot_duration) = slot_duration;
 
+	// let chain_head = match select_chain.best_chain().await{
+	// 	Ok(x)=>x,
+	// 	Err(_)=>{
+	// 		log::info!("committee: chain_head err");
+	// 		return
+	// 	}
+	// }
+
+	// let sync_id = chain_head.number();
+
 	let mut slots =
 		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
+
+	let (vote_tx, mut vote_rx) = mpsc::unbounded();
+	sync_oracle.ve_request(VoteElectionRequest::BuildVoteStream(vote_tx));
 
 	loop {
 		let slot_info = match slots.next_slot().await {
@@ -639,7 +674,26 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 				return
 			},
 		};
-		log::info!("comm: {}", slot_info.slot);
+
+		Delay::new(Duration::from_millis(100)).await;
+		// let sync_id = <NumberFor<B> as FromStr>::from_str("10");
+		// sync_oracle.ve_request(VoteElectionRequest::ConfigwVoteRound(sync_id);
+
+		loop{
+			let timeout = Delay::new(Duration::new(2,0));
+
+			futures::select!{
+				_ = timeout.fuse()=>{
+					log::info!("comm recv time out");
+					break;
+				}
+				vote = vote_rx.select_next_some()=>{
+					log::info!("comm recv vote: {:?}", vote);
+				}
+			}
+		}
+
+		log::info!("comm:{}", slot_info.slot);
 	}
 }
 

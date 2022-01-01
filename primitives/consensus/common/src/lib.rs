@@ -418,6 +418,7 @@ pub trait SlotData {
 
 pub enum VoteElectionRequest<B: BlockT>{
 	// SendVote(VoteData<B>, PeerId),
+	// ConfigNewVoteRound(NumberFor<B>),
 	PropagateVote(VoteData<B>),
 	BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
 	ReturnElectionResult,

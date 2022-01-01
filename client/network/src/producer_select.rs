@@ -171,6 +171,9 @@ impl<B: BlockT> ProducerSelectHandlerController<B>{
 			VoteElectionRequest::ReturnElectionResult =>{
 				let _ = self.to_handler.unbounded_send(ToHandler::SendElectionResult);
 			}
+			// VoteElectionRequest::ConfigVoteRound(sync_id)=>{
+			// 	let _ = self.to_handler.unbounded_send(ToHandler::ConfigVoteRound(sync_id));
+			// }
 		}
 		// let _ = self.to_handler.unbounded_send(request);
 	}
@@ -183,11 +186,13 @@ enum ToHandler<B: BlockT> {
 	PropagateNumber(u64, mpsc::UnboundedSender<u64>),
 	PropagateRandom(u64, NumberFor<B>),
 	SendVote(VoteData<B>, mpsc::UnboundedSender<Option<usize>>),
+
 	PrepareVote(NumberFor<B>, Duration),
+	PropagateVote(VoteData<B>),
 	SendElectionResult,
 	BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
+	// ConfigVoteRound(NumberFor<B>),
 
-	PropagateVote(VoteData<B>),
 	// Request(VoteElectionRequest<B>),
 }
 
@@ -292,6 +297,9 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 							// self.pendng_response = Some(pending_response);
 							self.propagate_vote(vote_data);
 						},
+						// ToHandler::ConfigVoteRound(NumberFor<B>) =>{
+						// 	log::info!("vote round: {}")
+						// }
 					}
 				},
 			}
@@ -354,6 +362,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 					if let Ok(msg) = <VoteElectionNotification<B> as Decode>::decode(&mut message.as_ref()){
 						match msg {
 							VoteElectionNotification::Vote(vote_data) => {
+								log::info!("<<<< vote: {:?} from: {:?}", vote_data, remote);
 								self.vote_notification_tx.as_ref().map(|v|{
 									let _ = v.unbounded_send((vote_data.clone(), remote));
 								});
@@ -472,16 +481,16 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 	fn propagate_vote(&mut self, vote_data: VoteData<B>){
 		let VoteData{vote_num, sync_id} = vote_data;
 
-		// save the local vote
-		if matches!(self.service.local_role(), Role::Authority){
-			// this.event_streams.send(Event::NotificationsReceived { remote, messages });
-			if let Some(vote_recv_config) = &self.vote_recv_config{
-				if vote_recv_config.sync_number == sync_id{
-					let &local_peer_id = self.service.local_peer_id();
-					self.vote_map.insert(vote_num, local_peer_id);
-				}
-			}
-		}
+		// // save the local vote
+		// if matches!(self.service.local_role(), Role::Authority){
+		// 	// this.event_streams.send(Event::NotificationsReceived { remote, messages });
+		// 	if let Some(vote_recv_config) = &self.vote_recv_config{
+		// 		if vote_recv_config.sync_number == sync_id{
+		// 			let &local_peer_id = self.service.local_peer_id();
+		// 			self.vote_map.insert(vote_num, local_peer_id);
+		// 		}
+		// 	}
+		// }
 
 		// propagate vote_data to authority
 		let mut propagated_numbers = 0;
@@ -502,7 +511,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 			// let to_send = VoteData::<B>::new(vote_num, sync_id.clone());
 			propagated_numbers += 1;
 
-            log::info!(">>>> {} to {:?}, client/network/src/producer_select.rs:439", vote_num, who);
+            log::info!(">>>> {} to {:?}, client/network/src/producer_select.rs:513", vote_num, who);
             self.service.write_notification(
                 who.clone(),
                 self.protocol_name.clone(),
@@ -511,7 +520,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 		}
 
 		let local_peer_id = self.service.local_peer_id();
-		// log::info!(">>>> {} to {:?}, client/network/src/producer_select.rs:439", vote_num, local_peer_id);
+		log::info!(">>>> {} to {:?}, client/network/src/producer_select.rs:522", vote_num, local_peer_id);
 		let _ = self.local_event_tx.unbounded_send(
 			Event::NotificationsReceived{
 				remote: local_peer_id.clone(), 
