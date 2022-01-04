@@ -31,6 +31,7 @@ use sp_runtime::{
 use sp_state_machine::StorageProof;
 use codec::{Encode, Decode};
 use libp2p::PeerId;
+use sp_consensus_slots::Slot;
 
 pub mod block_validation;
 pub mod error;
@@ -437,4 +438,12 @@ impl<B: BlockT> VoteData<B>{
 			sync_id,
 		}
 	}
+}
+
+pub enum CommitteeState{
+	Init,
+	SkipSync,
+	PrepareVote,
+	RecvVote,
+	WaitNextBlock,
 }

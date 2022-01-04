@@ -34,6 +34,7 @@ prometheus-endpoint = { package = "substrate-prometheus-endpoint", path = "../..
 wasm-timer = "0.2.5"
 thiserror = "1.0.21"
 libp2p = { version = "0.37.1", default-features = false }
+sp-consensus-slots = { version = "0.10.0-dev", default-features = false, path = "../slots" }
 
 [dev-dependencies]
 futures = "0.3.9"

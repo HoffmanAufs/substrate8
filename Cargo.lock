@@ -8929,6 +8929,7 @@ dependencies = [
  "parking_lot 0.11.1",
  "serde",
  "sp-api",
+ "sp-consensus-slots",
  "sp-core",
  "sp-inherents",
  "sp-runtime",

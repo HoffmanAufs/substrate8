@@ -37,7 +37,7 @@ use codec::{Decode, Encode};
 
 use rand::Rng;
 use futures::{future::Either, Future, TryFutureExt, channel::mpsc, FutureExt};
-use std::str::FromStr;
+use futures::StreamExt;
 
 use futures_timer::Delay;
 use log::{debug, error, info, warn};
@@ -45,7 +45,7 @@ use sc_consensus::{BlockImport, JustificationSyncLink};
 use sc_telemetry::{telemetry, TelemetryHandle, CONSENSUS_DEBUG, CONSENSUS_INFO, CONSENSUS_WARN};
 use sp_api::{ApiRef, ProvideRuntimeApi};
 use sp_arithmetic::traits::BaseArithmetic;
-use sp_consensus::{CanAuthorWith, Proposer, SelectChain, SlotData, SyncOracle, VoteData, VoteElectionRequest};
+use sp_consensus::{CanAuthorWith, Proposer, SelectChain, SlotData, SyncOracle, VoteData, VoteElectionRequest, CommitteeState};
 use sp_consensus_slots::Slot;
 use sp_inherents::{CreateInherentDataProviders, InherentDataProvider};
 use sp_runtime::{
@@ -54,10 +54,10 @@ use sp_runtime::{
 };
 use sp_timestamp::Timestamp;
 use std::{fmt::Debug, ops::Deref, time::Duration, sync::Arc};
+use std::collections::BTreeMap;
 
 use sc_client_api::{BlockchainEvents, ImportNotifications};
 use crate::worker::UntilImportedOrTimeout;
-use futures::StreamExt;
 
 /// The changes that need to applied to the storage to create the state for a block.
 ///
@@ -130,6 +130,7 @@ pub trait SimpleSlotWorker<B: BlockT> {
 
 	// fn block_chain_events(&self)->Self::BlockchainEvents;
 
+	/// A handle
 	fn block_notification_stream(&self)->ImportNotifications<B>;
 
 	/// Returns the epoch data necessary for authoring. For time-dependent epochs,
@@ -297,8 +298,8 @@ pub trait SimpleSlotWorker<B: BlockT> {
 			rng.gen::<u64>()&0xFFFFu64
 		};
 
-		let vote_data = <VoteData<B>>::new(local_random, parent_id);
-		let (tx, mut rx) = mpsc::unbounded::<Option<usize>>();
+		// let vote_data = <VoteData<B>>::new(local_random, parent_id);
+		let (_tx, mut rx) = mpsc::unbounded::<Option<usize>>();
 		// self.sync_oracle().send_vote(vote_data.clone(), tx);
 
 		// delay after vote for send election result
@@ -569,12 +570,12 @@ impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H, I, J);
 /// aura author worker
 pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	slot_duration: SlotDuration<T>,
-	client: Arc<C>,
+	_client: Arc<C>,
 	select_chain: S,
-	mut worker: W,
+	mut _worker: W,
 	mut sync_oracle: SO,
 	create_inherent_data_providers: CIDP,
-	can_author_with: CAW,
+	_can_author_with: CAW,
 ) where
 	B: BlockT,
 	C: BlockchainEvents<B> + Sync + Send + 'static, 
@@ -618,7 +619,7 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 
 		log::info!("auth: propagate vote: {:?}", vote_data);
 		Delay::new(Duration::from_millis(500)).await;
-		// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
+		sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
 		// Delay::new(Duration::from_millis(100)).await;
 		// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
 		// Delay::new(Duration::from_millis(100)).await;
@@ -631,12 +632,12 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 /// aura committee worker
 pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	slot_duration: SlotDuration<T>,
-	client: Arc<C>,
+	_client: Arc<C>,
 	select_chain: S,
-	mut worker: W,
+	mut _worker: W,
 	mut sync_oracle: SO,
 	create_inherent_data_providers: CIDP,
-	can_author_with: CAW,
+	_can_author_with: CAW,
 ) where
 	B: BlockT,
 	C: BlockchainEvents<B> + Sync + Send + 'static, 
@@ -653,12 +654,10 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	// let chain_head = match select_chain.best_chain().await{
 	// 	Ok(x)=>x,
 	// 	Err(_)=>{
-	// 		log::info!("committee: chain_head err");
+	// 		log::info!("author: chain_head err");
 	// 		return
 	// 	}
-	// }
-
-	// let sync_id = chain_head.number();
+	// };
 
 	let mut slots =
 		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
@@ -666,46 +665,155 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	let (vote_tx, mut vote_rx) = mpsc::unbounded();
 	sync_oracle.ve_request(VoteElectionRequest::BuildVoteStream(vote_tx));
 
-	loop {
-		let slot_info = match slots.next_slot().await {
-			Ok(r) => r,
-			Err(e) => {
-				warn!(target: "slots", "Error while polling for next slot: {:?}", e);
-				return
+	// let vote_config: Option<NumberFor<B>> = None;
+	let mut vote_map = BTreeMap::new();
+
+	let mut state = CommitteeState::Init;
+	loop{
+		match state{
+			CommitteeState::Init =>{
+				log::info!("Committee::Init");
+				state = CommitteeState::SkipSync;
+				// futures::select!{}
 			},
-		};
+			CommitteeState::SkipSync=>{
+				log::info!("Committee::SkipSync");
+				let mut time_out = Delay::new(Duration::from_secs(1)).fuse();
 
-		Delay::new(Duration::from_millis(100)).await;
-		// let sync_id = <NumberFor<B> as FromStr>::from_str("10");
-		// sync_oracle.ve_request(VoteElectionRequest::ConfigwVoteRound(sync_id);
-
-		loop{
-			let timeout = Delay::new(Duration::new(2,0));
-
-			futures::select!{
-				_ = timeout.fuse()=>{
-					log::info!("comm recv time out");
-					break;
+				loop{
+					futures::select!{
+						_ = time_out=>{
+							if sync_oracle.is_major_syncing(){
+								break;
+							}
+							else{
+								state = CommitteeState::PrepareVote;
+								break;
+							}
+						},
+						_ = slots.next_slot().fuse()=>{
+							state = CommitteeState::PrepareVote;
+							break;
+						},
+						_ = vote_rx.select_next_some()=>{
+							continue;
+						},
+					}
 				}
-				vote = vote_rx.select_next_some()=>{
-					log::info!("comm recv vote: {:?}", vote);
+			},
+			CommitteeState::PrepareVote=>{
+				log::info!("Committee::PrepareVote");
+				let mut time_out = Delay::new(Duration::from_millis(100)).fuse();
+
+				loop{
+					futures::select!{
+						_ = time_out=>{
+							vote_map.clear();
+							state = CommitteeState::RecvVote;
+							break;
+						},
+						_ = slots.next_slot().fuse() => {
+							break;
+						},
+						_ = vote_rx.select_next_some()=>{
+							continue;
+						},
+					}
 				}
-			}
+			},
+			CommitteeState::RecvVote=>{
+				log::info!("Committee::RecvVote");
+				let mut time_out = Delay::new(Duration::from_secs(2)).fuse();
+
+				loop{
+					futures::select!{
+						_ = time_out=>{
+							log::info!("vote result: ");
+							for (i, (k, v)) in vote_map.iter().enumerate(){
+								log::info!("{}: ({}, {})", i, k, v);
+							}
+							log::info!("send back election");
+							state = CommitteeState::WaitNextBlock;
+							break;
+						},
+						_ = slots.next_slot().fuse()=>{
+							state = CommitteeState::PrepareVote;
+							break;
+						},
+						vote = vote_rx.select_next_some()=>{
+							let (VoteData{vote_num, sync_id}, peer_id) = vote;
+							// log::info!("({},{}), {}", vote_num, sync_id, peer_id);
+							if true {
+								vote_map.insert(vote_num, peer_id);
+							}
+							continue;
+						}
+					}
+				}
+			},
+			CommitteeState::WaitNextBlock=>{
+				log::info!("CommitteeState::WaitNextBlock");
+				let mut time_out = Delay::new(Duration::from_secs(10)).fuse();
+
+				loop{
+					futures::select!{
+						_ = time_out=>{
+							log::info!("wait block time out");
+							state = CommitteeState::SkipSync;
+							break;
+						},
+						_ = slots.next_slot().fuse()=>{
+							state = CommitteeState::PrepareVote;
+							break;
+						},
+						_ = vote_rx.select_next_some()=>{
+							continue;
+						}
+					}
+				}
+			},
+
 		}
-
-		log::info!("comm:{}", slot_info.slot);
 	}
+
+	// loop {
+	// 	let slot_info = match slots.next_slot().await {
+	// 		Ok(r) => r,
+	// 		Err(e) => {
+	// 			warn!(target: "slots", "Error while polling for next slot: {:?}", e);
+	// 			return
+	// 		},
+	// 	};
+
+	// 	Delay::new(Duration::from_millis(100)).await;
+
+	// 	loop{
+	// 		let timeout = Delay::new(Duration::new(2,0));
+
+	// 		futures::select!{
+	// 			_ = timeout.fuse()=>{
+	// 				log::info!("comm recv time out");
+	// 				break;
+	// 			}
+	// 			vote = vote_rx.select_next_some()=>{
+	// 				log::info!("comm recv vote: {:?}", vote);
+	// 			}
+	// 		}
+	// 	}
+
+	// 	log::info!("comm:{}", slot_info.slot);
+	// }
 }
 
 /// worker 4
 pub async fn aura_slot_worker_4<B, C, S, W, T, SO, CIDP, CAW>(
-	slot_duration: SlotDuration<T>,
-	client: Arc<C>,
+	_slot_duration: SlotDuration<T>,
+	_client: Arc<C>,
 	select_chain: S,
-	mut worker: W,
+	mut _worker: W,
 	mut sync_oracle: SO,
-	create_inherent_data_providers: CIDP,
-	can_author_with: CAW,
+	_create_inherent_data_providers: CIDP,
+	_can_author_with: CAW,
 ) where
 	B: BlockT,
 	C: BlockchainEvents<B> + Sync + Send + 'static, 
