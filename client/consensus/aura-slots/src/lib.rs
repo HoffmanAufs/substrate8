@@ -45,7 +45,8 @@ use sc_consensus::{BlockImport, JustificationSyncLink};
 use sc_telemetry::{telemetry, TelemetryHandle, CONSENSUS_DEBUG, CONSENSUS_INFO, CONSENSUS_WARN};
 use sp_api::{ApiRef, ProvideRuntimeApi};
 use sp_arithmetic::traits::BaseArithmetic;
-use sp_consensus::{CanAuthorWith, Proposer, SelectChain, SlotData, SyncOracle, VoteData, VoteElectionRequest, CommitteeState};
+use sp_consensus::{CanAuthorWith, Proposer, SelectChain, SlotData, SyncOracle,
+	VoteData, VoteElectionRequest};
 use sp_consensus_slots::Slot;
 use sp_inherents::{CreateInherentDataProviders, InherentDataProvider};
 use sp_runtime::{
@@ -567,6 +568,22 @@ impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H);
 impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H, I);
 impl_inherent_data_provider_ext_tuple!(T, S, A, B, C, D, E, F, G, H, I, J);
 
+enum AuthorState{
+	Init,
+	SkipSync,
+	WaitSendVote,
+	WaitElection,
+	WaitProposal,
+}
+
+enum CommitteeState{
+	Init,
+	SkipSync(Delay),
+	PrepareVote(Delay),
+	RecvVote(Delay),
+	// WaitNextBlock,
+}
+
 /// aura author worker
 pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	slot_duration: SlotDuration<T>,
@@ -627,6 +644,122 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 
 		log::info!("auth:{}", slot_info.slot);
 	}
+
+	let (election_tx, mut election_rx) = mpsc::unbounded();
+	sync_oracle.ve_request(VoteElectionRequest::BuildElectionStream(election_tx));
+
+	// let mut send_vote_delay;
+	// let mut proposal_delay;
+
+	let mut state = AuthorState::Init;
+	loop{
+		match state{
+			AuthorState::Init=>{
+				state = AuthorState::SkipSync;
+				continue;
+			},
+			AuthorState::SkipSync{
+				if !sync_oracle.is_major_syncing(){
+					state = AuthorState::SkipBlockAndVote;
+					continue;
+				}
+
+				let check_sync_timeout = Delay::new(Duration::from_millis(500));
+				loop{
+					futures::select!{
+						_ = time_out => {
+							if sync_oracle.is_major_syncing(){
+								state = AuthorState::SkipSync;
+								break;
+							}
+							else{
+								state = AuthorState::SkipBlockAndVote;
+								break;
+							}
+						},
+						_ = slots.next_slot().fuse()=>{
+							if sync_oracle.is_major_syncing(){
+								continue;
+							}
+							else{
+								state = AuthorState::SkipBlockAndVote;
+								break;
+							}
+						},
+						_ = election_rx.select_next_some(){
+							continue;
+						},
+					}
+				}
+			},
+			AuthorState::SkipBlockAndVote=>{
+				let timeout = Delay::new(Duration::from_millis(500));
+				loop{
+					futures::select!{
+						_ = timeout.fuse()=>{
+							Delay::new(Duration::from_millis(300)).await;
+							sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data, committee));
+							state = AuthorState::WaitElection;
+							break;
+						},
+						_ = slots.next_slot().fuse()=>{
+							// state = AuthorState::SkipBlock(None);
+							state = AuthorState::SkipSync;
+							break;
+						},
+						_ = election_rx.select_next_some()=>{
+							continue;
+						},
+					}
+				}
+			},
+			AuthorState::WaitElection => {
+				let recv_election_timeout = Delay::new(Duration::new(2,0));
+				loop{
+					futures::select!{
+						_ = recv_election_timeout.fuse() => {
+							// proposal_delay = Delay::new(Duration::from_millis());
+							proposal_delay = caculate_proposal_delay(elections);
+							state = AuthorState::WaitProposal(proposal_delay);
+							break;
+							// sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data));
+						},
+						_ = slots.next_slot().fuse() => {
+							// state = AuthorState::WaitSendVote;
+							state = AuthorState::SkipSync;
+							break;
+						},
+						election = election_rx.select_next_some() => {
+							elections.insert(election);
+							// state = AuthorState::WaitProposal;
+							// save vote
+							continue;
+						},
+					}
+				}
+			},
+			AuthorState::WaitProposal(proposal_delay) => {
+				let timeout = proposal_delay;
+				loop{
+					futures::select!{
+						_ = timeout.fuse()=>{
+							build_block();
+							Delay::new(Duration::from_millis(300)).await;
+							state = AuthorState::SkipBlockAndVote;
+							break;
+						},
+						_ = slots.next_slot().fuse()=>{
+							state = AuthorState::SkipSync;
+							break;
+						},
+						_ = election_rx.select_next_some() => {
+							continue;
+						},
+					}
+				}
+			},
+		}
+	}
 }
 
 /// aura committee worker
@@ -650,6 +783,7 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	CAW: CanAuthorWith<B> + Send,
 {
 	let SlotDuration(slot_duration) = slot_duration;
+	// let SlotDuration(block_duration) = slot_duration;
 
 	// let chain_head = match select_chain.best_chain().await{
 	// 	Ok(x)=>x,
@@ -674,26 +808,35 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 			CommitteeState::Init =>{
 				log::info!("Committee::Init");
 				state = CommitteeState::SkipSync;
-				// futures::select!{}
+				continue;
 			},
 			CommitteeState::SkipSync=>{
 				log::info!("Committee::SkipSync");
-				let mut time_out = Delay::new(Duration::from_secs(1)).fuse();
+				if !sync_oracle.is_major_syncing(){
+					state = CommitteeState::SkipBlock;
+					continue;
+				}
 
+				let skip_sync_timeout = Delay::new(Duration::from_millis(500));
 				loop{
 					futures::select!{
-						_ = time_out=>{
+						_ = skip_sync_timeout.fuse() => {
 							if sync_oracle.is_major_syncing(){
-								break;
+								continue;
 							}
 							else{
-								state = CommitteeState::PrepareVote;
+								state = CommitteeState::SkipBlock;
 								break;
 							}
 						},
 						_ = slots.next_slot().fuse()=>{
-							state = CommitteeState::PrepareVote;
-							break;
+							if sync_oracle.is_major_syncing(){
+								continue;
+							}
+							else{
+								state = CommitteeState::SkipBlock;
+								break;
+							}
 						},
 						_ = vote_rx.select_next_some()=>{
 							continue;
@@ -701,18 +844,20 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 					}
 				}
 			},
-			CommitteeState::PrepareVote=>{
-				log::info!("Committee::PrepareVote");
-				let mut time_out = Delay::new(Duration::from_millis(100)).fuse();
+			CommitteeState::SkipBlock=>{
+			// CommitteeState::PrepareVote=>{
+				log::info!("Committee::SkipBlock");
+				let skip_block_delay = Delay::new(Duration::from_millis(500));
 
 				loop{
 					futures::select!{
-						_ = time_out=>{
-							vote_map.clear();
+						_ = skip_block_delay.fuse() =>{
+							Delay::new(Duration::from_millis(100)).await;
 							state = CommitteeState::RecvVote;
 							break;
 						},
 						_ = slots.next_slot().fuse() => {
+							state = CommitteeState::SkipSync;
 							break;
 						},
 						_ = vote_rx.select_next_some()=>{
@@ -723,16 +868,19 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 			},
 			CommitteeState::RecvVote=>{
 				log::info!("Committee::RecvVote");
-				let mut time_out = Delay::new(Duration::from_secs(2)).fuse();
+				//TODO: config vote recv params
+				vote_map.clear();
+				let recv_vote_delay = Delay::new(Duration::from_millis(2000)).fuse();
 
 				loop{
 					futures::select!{
-						_ = time_out=>{
+						_ = recv_vote_delay.fuse() =>{
 							log::info!("vote result: ");
 							for (i, (k, v)) in vote_map.iter().enumerate(){
 								log::info!("{}: ({}, {})", i, k, v);
 							}
 							log::info!("send back election");
+							//TODO send election back
 							state = CommitteeState::WaitNextBlock;
 							break;
 						},
@@ -753,17 +901,17 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 			},
 			CommitteeState::WaitNextBlock=>{
 				log::info!("CommitteeState::WaitNextBlock");
-				let mut time_out = Delay::new(Duration::from_secs(10)).fuse();
+				let time_out = Delay::new(Duration::from_millis(10_000)).fuse();
 
 				loop{
 					futures::select!{
-						_ = time_out=>{
+						_ = time_out.fuse() => {
 							log::info!("wait block time out");
 							state = CommitteeState::SkipSync;
 							break;
 						},
 						_ = slots.next_slot().fuse()=>{
-							state = CommitteeState::PrepareVote;
+							state = CommitteeState::RecvVote;
 							break;
 						},
 						_ = vote_rx.select_next_some()=>{

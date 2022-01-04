@@ -440,10 +440,18 @@ impl<B: BlockT> VoteData<B>{
 	}
 }
 
-pub enum CommitteeState{
-	Init,
-	SkipSync,
-	PrepareVote,
-	RecvVote,
-	WaitNextBlock,
-}
+// pub enum CommitteeState{
+// 	Init,
+// 	SkipSync,
+// 	PrepareVote,
+// 	RecvVote,
+// 	WaitNextBlock,
+// }
+
+// pub enum AuthorState{
+// 	Init,
+// 	SkipSync,
+// 	WaitSendVote,
+// 	WaitElection,
+// 	WaitProposal,
+// }
