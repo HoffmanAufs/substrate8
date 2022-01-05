@@ -240,16 +240,7 @@ pub trait SyncOracle<B: BlockT> {
 	fn is_author(&mut self)->bool;
 	fn is_committee(&mut self)->bool;
 
-	// fn send_number(&mut self, n: u64, pending_response: mpsc::UnboundedSender<u64>);
-	// fn propagate_random(&mut self, vote_num: u64, parent_id: NumberFor<B>);
-	// fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration);
-	// fn send_vote(&mut self, vote_data: VoteData<B>, tx: mpsc::UnboundedSender<Option<usize>>);
-	// fn send_election_result(&mut self);
-	// fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>);
-
-	fn ve_request(&mut self, r: VoteElectionRequest<B>);
-	// fn call_network_service(&mut self, _: VoteElectionRequst<B>);
-	// fn build_election_stream(&mut self);
+	fn ve_request(&mut self, _: VoteElectionRequest<B>);
 }
 
 /// A synchronization oracle for when there is no network.
@@ -259,7 +250,7 @@ pub struct NoNetwork;
 impl<B: BlockT> SyncOracle<B> for NoNetwork {
 	fn is_major_syncing(&mut self) -> bool {
 		false
-	}
+	}	
 
 	fn is_offline(&mut self) -> bool {
 		false
@@ -278,15 +269,6 @@ impl<B: BlockT> SyncOracle<B> for NoNetwork {
 		false
 	}
 
-	// fn call_network_service(&mut self, _: VoteElectionRequst<B>);
-
-	// fn send_number(&mut self, _: u64, _pending_response: mpsc::UnboundedSender<u64>){}
-	// fn propagate_random(&mut self, _: u64, _: NumberFor<B>){}
-	// fn prepare_vote(&mut self, _: NumberFor<B>, _: Duration){}
-	// fn send_vote(&mut self, _: VoteData<B>, _: mpsc::UnboundedSender<Option<usize>>){}
-	// fn send_election_result(&mut self){}
-	// fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){}
-	// fn build_election_stream(&mut self){}
 	fn ve_request(&mut self, _: VoteElectionRequest<B>){}
 }
 
@@ -316,38 +298,9 @@ where
 		<&T>::is_committee(&mut &**self)
 	}
 
-	// fn send_number(&mut self, n: u64, pending_response: mpsc::UnboundedSender<u64>){
-	// 	<&T>::send_number(&mut &**self, n, pending_response)
-	// }
-
-	// fn propagate_random(&mut self, vote_num: u64, parent_id: NumberFor<B>){
-	// 	<&T>::propagate_random(&mut &**self, vote_num, parent_id)
-	// }
-
-	// fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration){
-	// 	<&T>::prepare_vote(&mut &**self, sync_number, duration);
-	// }
-
-	// fn send_vote(&mut self, vote_data: VoteData<B>, tx: mpsc::UnboundedSender<Option<usize>>){
-	// 	<&T>::send_vote(&mut &**self, vote_data, tx)
-	// }
-
-	// fn send_election_result(&mut self){
-	// 	<&T>::send_election_result(&mut &**self)
-	// }
-
-	// fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<VoteData<B>>){
-	// fn build_vote_stream(&mut self, tx: mpsc::UnboundedSender<(VoteData<B>, PeerId)>){
-	// 	<&T>::build_vote_stream(&mut &**self, tx)
-	// }
-
 	fn ve_request(&mut self, request: VoteElectionRequest<B>){
 		<&T>::ve_request(&mut &**self, request)
 	}
-
-	// fn build_election_stream(&mut self, tx: mpsc::Unv){
-	// 	<&T>::build_election_stream(&mut &**self)
-	// }
 }
 
 /// Checks if the current active native block authoring implementation can author with the runtime
@@ -417,11 +370,16 @@ pub trait SlotData {
 	const SLOT_KEY: &'static [u8];
 }
 
+#[derive(Debug)]
 pub enum VoteElectionRequest<B: BlockT>{
-	// SendVote(VoteData<B>, PeerId),
 	// ConfigNewVoteRound(NumberFor<B>),
-	PropagateVote(VoteData<B>),
 	BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
+	BuildElectionStream(mpsc::UnboundedSender<Vec<(PeerId, u64)>>),
+	SendVote(VoteData<B>, PeerId),
+	// SendElectionResult(Vec<PeerId>),
+
+	// test usage
+	PropagateVote(VoteData<B>),
 	ReturnElectionResult,
 }
 
@@ -439,19 +397,3 @@ impl<B: BlockT> VoteData<B>{
 		}
 	}
 }
-
-// pub enum CommitteeState{
-// 	Init,
-// 	SkipSync,
-// 	PrepareVote,
-// 	RecvVote,
-// 	WaitNextBlock,
-// }
-
-// pub enum AuthorState{
-// 	Init,
-// 	SkipSync,
-// 	WaitSendVote,
-// 	WaitElection,
-// 	WaitProposal,
-// }

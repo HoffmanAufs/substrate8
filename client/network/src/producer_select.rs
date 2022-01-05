@@ -161,20 +161,18 @@ impl<B: BlockT> ProducerSelectHandlerController<B>{
 	// }
 
 	pub fn handle_request(&self, request: VoteElectionRequest<B>){
-		match request{
-			VoteElectionRequest::PropagateVote(vote_data) => {
-				let _ = self.to_handler.unbounded_send(ToHandler::PropagateVote(vote_data));
-			}
-			VoteElectionRequest::BuildVoteStream(tx) =>{
-				let _ = self.to_handler.unbounded_send(ToHandler::BuildVoteStream(tx));
-			}
-			VoteElectionRequest::ReturnElectionResult =>{
-				let _ = self.to_handler.unbounded_send(ToHandler::SendElectionResult);
-			}
-			// VoteElectionRequest::ConfigVoteRound(sync_id)=>{
-			// 	let _ = self.to_handler.unbounded_send(ToHandler::ConfigVoteRound(sync_id));
-			// }
-		}
+		// match request{
+		// 	VoteElectionRequest::PropagateVote(vote_data) => {
+		// 		let _ = self.to_handler.unbounded_send(ToHandler::PropagateVote(vote_data));
+		// 	}
+		// 	VoteElectionRequest::BuildVoteStream(tx) =>{
+		// 		let _ = self.to_handler.unbounded_send(ToHandler::BuildVoteStream(tx));
+		// 	}
+		// 	VoteElectionRequest::ReturnElectionResult =>{
+		// 		let _ = self.to_handler.unbounded_send(ToHandler::SendElectionResult);
+		// 	}
+		// }
+		log::info!("Handle request: {:?}", request);
 		// let _ = self.to_handler.unbounded_send(request);
 	}
 	// pub fn take_vote_notification_rx(&mut self)->Option<mpsc::UnboundedReceiver<VoteData<B>>>{

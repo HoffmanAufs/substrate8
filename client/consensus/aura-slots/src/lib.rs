@@ -53,11 +53,12 @@ use sp_runtime::{
 	generic::BlockId,
 	traits::{Block as BlockT, HashFor, Header as HeaderT, NumberFor, Zero},
 };
+use sp_blockchain::ProvideCache;
 use sp_timestamp::Timestamp;
-use std::{fmt::Debug, ops::Deref, time::Duration, sync::Arc};
+use std::{fmt::Debug, ops::Deref, time::{Duration, SystemTime }, sync::Arc};
 use std::collections::BTreeMap;
 
-use sc_client_api::{BlockchainEvents, ImportNotifications};
+use sc_client_api::{BlockchainEvents, ImportNotifications, BlockOf};
 use crate::worker::UntilImportedOrTimeout;
 
 /// The changes that need to applied to the storage to create the state for a block.
@@ -573,7 +574,7 @@ enum AuthorState{
 	WaitSyncFinish,
 	WaitSendVote,
 	WaitElection,
-	WaitProposal,
+	WaitProposal(Duration),
 }
 
 
@@ -588,7 +589,8 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	_can_author_with: CAW,
 ) where
 	B: BlockT,
-	C: BlockchainEvents<B> + Sync + Send + 'static, 
+	C: BlockchainEvents<B> + ProvideRuntimeApi<B> + BlockOf + ProvideCache<B> + Sync + Send + 'static, 
+	// C::Api: AuraApi<B, AuthorityId<P>>,
 	S: SelectChain<B>,
 	W: SimpleSlotWorker<B> + Send,
 	SO: SyncOracle<B> + Send,
@@ -597,52 +599,51 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
 	CAW: CanAuthorWith<B> + Send,
 {
-	let SlotDuration(slot_duration) = slot_duration;
+	// let SlotDuration(slot_duration) = slot_duration;
 
-	let chain_head = match select_chain.best_chain().await{
-		Ok(x)=>x,
-		Err(_)=>{
-			log::info!("author: chain_head err");
-			return
-		}
-	};
-	let sync_id = chain_head.number();
+	// let chain_head = match select_chain.best_chain().await{
+	// 	Ok(x)=>x,
+	// 	Err(_)=>{
+	// 		log::info!("author: chain_head err");
+	// 		return
+	// 	}
+	// };
+	// let sync_id = chain_head.number();
+
+	// let mut slots =
+	// 	Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
+
+	// let mut i = 0;
+	// loop {
+	// 	let slot_info = match slots.next_slot().await {
+	// 		Ok(r) => r,
+	// 		Err(e) => {
+	// 			warn!(target: "slots", "Error while polling for next slot: {:?}", e);
+	// 			return
+	// 		},
+	// 	};
+
+	// 	// let sync_id = <NumberFor<B> as FromStr>::from_str("10");
+	// 	// let sync_id = <NumberFor<B> as Decode>::decode(&mut [0u8]);
+	// 	let vote_data = <VoteData<B>>::new(i, sync_id.clone());
+	// 	i+=1;
+
+	// 	log::info!("auth: propagate vote: {:?}", vote_data);
+	// 	Delay::new(Duration::from_millis(500)).await;
+	// 	sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
+	// 	// Delay::new(Duration::from_millis(100)).await;
+	// 	// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
+	// 	// Delay::new(Duration::from_millis(100)).await;
+	// 	// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
+
+	// 	log::info!("auth:{}", slot_info.slot);
+	// }
 
 	let mut slots =
 		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
 
-
-	let mut i = 0;
-	loop {
-		let slot_info = match slots.next_slot().await {
-			Ok(r) => r,
-			Err(e) => {
-				warn!(target: "slots", "Error while polling for next slot: {:?}", e);
-				return
-			},
-		};
-
-		// let sync_id = <NumberFor<B> as FromStr>::from_str("10");
-		// let sync_id = <NumberFor<B> as Decode>::decode(&mut [0u8]);
-		let vote_data = <VoteData<B>>::new(i, sync_id.clone());
-		i+=1;
-
-		log::info!("auth: propagate vote: {:?}", vote_data);
-		Delay::new(Duration::from_millis(500)).await;
-		sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
-		// Delay::new(Duration::from_millis(100)).await;
-		// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
-		// Delay::new(Duration::from_millis(100)).await;
-		// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
-
-		log::info!("auth:{}", slot_info.slot);
-	}
-
 	let (election_tx, mut election_rx) = mpsc::unbounded();
 	sync_oracle.ve_request(VoteElectionRequest::BuildElectionStream(election_tx));
-
-	// let mut send_vote_delay;
-	// let mut proposal_delay;
 
 	let mut state = AuthorState::Init;
 	loop{
@@ -659,10 +660,15 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 					continue;
 				}
 
-				let timeout = Delay::new(Duration::from_millis(500));
+				let total_delay = Duration::from_millis(500);
+				let start_ts = SystemTime::now();
 				loop{
+					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
+					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
+					let timeout = Delay::new(rest_delay);
+
 					futures::select!{
-						_ = slots.next_slot().fuse()=>{
+						_ = slots.next_slot().fuse() => {
 							continue;
 							// if sync_oracle.is_major_syncing(){
 							// 	continue;
@@ -672,10 +678,10 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 							// 	break;
 							// }
 						},
-						_ = election_rx.select_next_some(){
+						_ = election_rx.select_next_some() => {
 							continue;
 						},
-						_ = time_out => {
+						_ = timeout.fuse() => {
 							if sync_oracle.is_major_syncing(){
 								state = AuthorState::WaitSyncFinish;
 								break;
@@ -690,8 +696,14 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 			},
 			AuthorState::WaitSendVote => {
 				log::info!("AuthorState::WaitSendVote");
-				let timeout = Delay::new(Duration::from_millis(800));
+
+				let total_delay = Duration::from_millis(800);
+				let start_ts = SystemTime::now();
 				loop{
+					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
+					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
+					let timeout = Delay::new(rest_delay);
+
 					futures::select!{
 						_ = slots.next_slot().fuse()=>{
 							state = AuthorState::WaitSendVote;
@@ -702,7 +714,19 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 						},
 						_ = timeout.fuse()=>{
 							// Delay::new(Duration::from_millis(500)).await;  // wait committee config vote
-							sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data, committee));
+							// let committee = match committee(client.as_ref(), &BlockId::Hash(header.hash())){
+							// 	Ok(x)=>x,
+							// 	Err(e)=>{
+							// 		log::info!(
+							// 			"Unable to fetch committee at block {:?}: {:?}",
+							// 			chain_head.number(),
+							// 			e,
+							// 		);
+							// 		state = AuthorState::WaitSyncFinish;
+							// 		break;
+							// 	}
+							// }
+							// sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data, committee));
 							state = AuthorState::WaitElection;
 							break;
 						},
@@ -711,35 +735,44 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 			},
 			AuthorState::WaitElection => {
 				log::info!("AuthorState::WaitElection");
-				let recv_election_timeout = Delay::new(Duration::new(2,0));
+
+				let total_delay = Duration::from_millis(2000);
+				let start_ts = SystemTime::now();
 				loop{
+					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
+					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
+					let timeout = Delay::new(rest_delay);
+
 					futures::select!{
 						_ = slots.next_slot().fuse() => {
 							// state = AuthorState::WaitSendVote;
 							state = AuthorState::WaitSendVote;
 							break;
 						},
-						election = election_rx.select_next_some() => {
-							elections.insert(election);
+						_election = election_rx.select_next_some() => {
+							// elections.insert(election);
 							// state = AuthorState::WaitProposal;
 							// save vote
 							//TODO: maybe break with proposal_delay
 							continue;
 						},
-						_ = recv_election_timeout.fuse() => {
-							// proposal_delay = Delay::new(Duration::from_millis());
-							proposal_delay = caculate_proposal_delay(elections);
+						_ = timeout.fuse() => {
+							let proposal_delay = Duration::from_millis(300);
 							state = AuthorState::WaitProposal(proposal_delay);
 							break;
-							// sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data));
 						},
 					}
 				}
 			},
 			AuthorState::WaitProposal(proposal_delay) => {
 				log::info!("AuthorState::WaitProposal");
-				let timeout = proposal_delay;
+				let total_delay = proposal_delay;
+				let start_ts = SystemTime::now();
 				loop{
+					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
+					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
+					let timeout = Delay::new(rest_delay);
+
 					futures::select!{
 						_ = slots.next_slot().fuse()=>{
 							state = AuthorState::WaitSyncFinish;
@@ -749,8 +782,8 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 							continue;
 						},
 						_ = timeout.fuse()=>{
-							build_block();
-							Delay::new(Duration::from_millis(300)).await;
+							// build_block();
+							// Delay::new(Duration::from_millis(300)).await;
 							state = AuthorState::WaitSyncFinish;
 							break;
 						},
@@ -789,8 +822,7 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
 	CAW: CanAuthorWith<B> + Send,
 {
-	let SlotDuration(slot_duration) = slot_duration;
-	// let SlotDuration(block_duration) = slot_duration;
+	// let SlotDuration(slot_duration) = slot_duration;
 
 	// let chain_head = match select_chain.best_chain().await{
 	// 	Ok(x)=>x,
@@ -824,8 +856,13 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 					continue;
 				}
 
-				let skip_sync_timeout = Delay::new(Duration::from_millis(500));
+				let total_delay = Duration::from_millis(500);
+				let start_ts = SystemTime::now();
 				loop{
+					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
+					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
+					let timeout = Delay::new(rest_delay);
+
 					futures::select!{
 						_ = slots.next_slot().fuse()=>{
 							continue;
@@ -840,7 +877,7 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 						_ = vote_rx.select_next_some()=>{
 							continue;
 						},
-						_ = skip_sync_timeout.fuse() => {
+						_ = timeout.fuse() => {
 							if sync_oracle.is_major_syncing(){
 								state = CommitteeState::WaitSyncFinish;
 								break;
@@ -855,12 +892,23 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 			},
 			CommitteeState::WaitVoteStart=>{
 				log::info!("Committee::WaitVoteStart");
-				let timeout = Delay::new(Duration::from_millis(500));
-
+				let total_delay = Duration::from_millis(500);
+				let start_ts = SystemTime::now();
 				loop{
+					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
+					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
+					let timeout = Delay::new(rest_delay);
+
 					futures::select!{
 						_ = slots.next_slot().fuse() => {
-							state = CommitteeState::WaitVoteStart;
+							state = {
+								if true{ // in the committee at this block
+									CommitteeState::WaitVoteStart 
+								}
+								else{ 
+									CommitteeState::WaitSyncFinish
+								}
+							};
 							break;
 						},
 						_ = vote_rx.select_next_some()=>{
@@ -878,9 +926,14 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 				log::info!("Committee::RecvVote");
 				//TODO: config vote recv params
 				vote_map.clear();
-				let timeout = Delay::new(Duration::from_millis(2000)).fuse();
 
+				let total_delay = Duration::from_millis(2000);
+				let start_ts = SystemTime::now();
 				loop{
+					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
+					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
+					let timeout = Delay::new(rest_delay);
+
 					futures::select!{
 						_ = slots.next_slot().fuse()=>{
 							state = CommitteeState::WaitVoteStart;
@@ -905,13 +958,17 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 				log::info!("CommitteeState::WaitNextBlock");
 
 				//TODO send election back
-				log::info!("vote result: ");
-				for (i, (k, v)) in vote_map.iter().enumerate(){
-					log::info!("{}: ({}, {})", i, k, v);
-				}
-
-				let time_out = Delay::new(Duration::from_millis(10_000));
+				// log::info!("vote result: ");
+				// for (i, (k, v)) in vote_map.iter().enumerate(){
+				// 	log::info!("{}: ({}, {})", i, k, v);
+				// }
+				let total_delay = Duration::from_millis(10_000);
+				let start_ts = SystemTime::now();
 				loop{
+					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
+					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
+					let timeout = Delay::new(rest_delay);
+
 					futures::select!{
 						_ = slots.next_slot().fuse()=>{
 							state = CommitteeState::WaitSyncFinish;
@@ -920,8 +977,8 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 						_ = vote_rx.select_next_some()=>{
 							continue;
 						},
-						_ = time_out.fuse() => {
-							log::info!("wait block time out");
+						_ = timeout.fuse() => {
+							// log::info!("wait block time out");
 							state = CommitteeState::WaitSyncFinish;
 							break;
 						},
@@ -932,6 +989,20 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	}
 
 }
+
+// fn committee<A, B, C>(client: &C, at: &BlockId<B>) -> Result<Vec<A>, ConsensusError>
+// where
+// 	A: Codec + Debug,
+// 	B: BlockT,
+// 	C: ProvideRuntimeApi<B> + BlockOf + ProvideCache<B>,
+// 	C::Api: AuraApi<B, A>,
+// {
+// 	client
+// 		.runtime_api()
+// 		.authorities(at)
+// 		.ok()
+// 		.ok_or_else(|| sp_consensus::Error::InvalidAuthoritiesSet.into())
+// }
 
 /// worker 4
 pub async fn aura_slot_worker_4<B, C, S, W, T, SO, CIDP, CAW>(
