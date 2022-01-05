@@ -375,7 +375,7 @@ pub enum VoteElectionRequest<B: BlockT>{
 	// ConfigNewVoteRound(NumberFor<B>),
 	BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
 	BuildElectionStream(mpsc::UnboundedSender<Vec<(PeerId, u64)>>),
-	SendVote(VoteData<B>, PeerId),
+	SendVote(VoteData<B>, Vec<PeerId>),
 	// SendElectionResult(Vec<PeerId>),
 
 	// test usage

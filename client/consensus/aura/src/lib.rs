@@ -73,7 +73,7 @@ use sp_application_crypto::{AppKey, AppPublic};
 use sp_blockchain::{HeaderBackend, ProvideCache, Result as CResult};
 use sp_consensus::{
 	BlockOrigin, CanAuthorWith, Environment, Error as ConsensusError, Proposer, SelectChain,
-	VoteData,
+	VoteData, VoteElectionRequest,
 };
 use sp_consensus_slots::Slot;
 use sp_core::crypto::{Pair, Public};
@@ -83,6 +83,7 @@ use sp_runtime::{
 	generic::BlockId,
 	traits::{Block as BlockT, DigestItemFor, Header, Member, NumberFor, Zero},
 };
+use libp2p::PeerId;
 
 mod import_queue;
 
@@ -772,6 +773,47 @@ where
 			self.logging_target(),
 		)
 	}
+
+	fn author_send_vote(&mut self, header: &B::Header){
+		if let Ok(committee) = authorities(self.client.as_ref(), &BlockId::Hash(header.hash())){
+			let mut peer_vec: Vec<PeerId> = vec![];
+			for (i, member) in committee.iter().enumerate(){
+				log::info!("{}: {:?}", i, member);
+
+				// match PeerId::from_bytes(member.as_slice()){
+				// 	Ok(peer)=>{ peer_vec.push(peer);},
+				// 	Err(e)=>{log::info!("convert err:{}", e);}
+				// }
+
+				// peer_vec.push(member.into());
+				// log::info!("{}: {:?}", i, member);
+				// if let Ok(peer) = PeerId::from_bytes(member.clone().to_raw_vec().as_slice()){
+				// 	peer_vec.push(peer);
+				// };
+			}
+
+			let vote_num = {
+				let mut rng = rand::thread_rng();
+				rng.gen::<u64>() & 0xFFFFu64
+			};
+			let &sync_id = header.number();
+			let vote_data = <VoteData<B>>::new(vote_num, sync_id);
+			self.sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data, peer_vec));
+			// self.sync_oracle.ve_request()
+		}
+	}
+
+	fn propagate_vote(&mut self, header: &B::Header){
+		let vote_num = {
+			let mut rng = rand::thread_rng();
+			rng.gen::<u64>() & 0xFFFFu64
+		};
+		let &sync_id = header.number();
+		let vote_data = <VoteData<B>>::new(vote_num, sync_id);
+		self.sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
+		// log::info!("{:?}: {:?}", header.number(), header.hash());
+	}
+
 }
 
 fn aura_err<B: BlockT>(error: Error<B>) -> Error<B> {

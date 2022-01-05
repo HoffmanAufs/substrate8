@@ -511,6 +511,26 @@ pub trait SimpleSlotWorker<B: BlockT> {
 		}
 		Some(SlotResult { block: B::new(header, body), storage_proof })
 	}
+
+	fn author_send_vote(&mut self, header: &B::Header);
+
+	fn propagate_vote(&mut self, header: &B::Header);
+
+	// async fn propagate_vote<S: SelectChain<B>>(&mut self, select_chain: S);
+	// async fn propagate_vote(&mut self, select_chain: SelectChain<B>){
+	// 	let chain_head = match select_chain.best_chain().await{
+	// 		Ok(x)=>x,
+	// 		Err(e)=>return
+	// 	};
+
+	// 	let vote_num = {
+	// 		let mut rng = rand::thread_rng();
+	// 		rng.gen::<u64>() & 0xFFFFu64
+	// 	};
+	// 	let &sync_id = chain_header.number();
+	// 	let vote_data = <VoteData<B>>::new(vote_num, sync_id);
+	// 	self.sync_oracle().ve_request(VoteElectionRequest::PropagateVote(vote_data));
+	// }
 }
 
 // #[async_trait::async_trait]
@@ -583,7 +603,7 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	slot_duration: SlotDuration<T>,
 	_client: Arc<C>,
 	select_chain: S,
-	mut _worker: W,
+	mut worker: W,
 	mut sync_oracle: SO,
 	create_inherent_data_providers: CIDP,
 	_can_author_with: CAW,
@@ -599,51 +619,15 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
 	CAW: CanAuthorWith<B> + Send,
 {
-	// let SlotDuration(slot_duration) = slot_duration;
-
-	// let chain_head = match select_chain.best_chain().await{
-	// 	Ok(x)=>x,
-	// 	Err(_)=>{
-	// 		log::info!("author: chain_head err");
-	// 		return
-	// 	}
-	// };
-	// let sync_id = chain_head.number();
-
-	// let mut slots =
-	// 	Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
-
-	// let mut i = 0;
-	// loop {
-	// 	let slot_info = match slots.next_slot().await {
-	// 		Ok(r) => r,
-	// 		Err(e) => {
-	// 			warn!(target: "slots", "Error while polling for next slot: {:?}", e);
-	// 			return
-	// 		},
-	// 	};
-
-	// 	// let sync_id = <NumberFor<B> as FromStr>::from_str("10");
-	// 	// let sync_id = <NumberFor<B> as Decode>::decode(&mut [0u8]);
-	// 	let vote_data = <VoteData<B>>::new(i, sync_id.clone());
-	// 	i+=1;
-
-	// 	log::info!("auth: propagate vote: {:?}", vote_data);
-	// 	Delay::new(Duration::from_millis(500)).await;
-	// 	sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
-	// 	// Delay::new(Duration::from_millis(100)).await;
-	// 	// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
-	// 	// Delay::new(Duration::from_millis(100)).await;
-	// 	// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data.clone()));
-
-	// 	log::info!("auth:{}", slot_info.slot);
-	// }
-
 	let mut slots =
-		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
+		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain.clone());
 
 	let (election_tx, mut election_rx) = mpsc::unbounded();
 	sync_oracle.ve_request(VoteElectionRequest::BuildElectionStream(election_tx));
+
+	// if let Some(local_peer_id) = sync_oracle.local_peer_id(){
+	// 	log::info!("local_peer_id: {:?}", local_peer_id);
+	// }
 
 	let mut state = AuthorState::Init;
 	loop{
@@ -713,20 +697,15 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 							continue;
 						},
 						_ = timeout.fuse()=>{
-							// Delay::new(Duration::from_millis(500)).await;  // wait committee config vote
-							// let committee = match committee(client.as_ref(), &BlockId::Hash(header.hash())){
-							// 	Ok(x)=>x,
-							// 	Err(e)=>{
-							// 		log::info!(
-							// 			"Unable to fetch committee at block {:?}: {:?}",
-							// 			chain_head.number(),
-							// 			e,
-							// 		);
-							// 		state = AuthorState::WaitSyncFinish;
-							// 		break;
-							// 	}
-							// }
-							// sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data, committee));
+							Delay::new(Duration::from_millis(500)).await;  // wait committee config vote
+							let chain_head = match select_chain.best_chain().await{
+								Ok(x)=>x,
+								Err(_)=>{
+									state = AuthorState::WaitSyncFinish;
+									break;
+								}
+							};
+							worker.propagate_vote(&chain_head);
 							state = AuthorState::WaitElection;
 							break;
 						},
