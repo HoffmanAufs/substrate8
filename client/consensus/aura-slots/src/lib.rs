@@ -512,8 +512,10 @@ pub trait SimpleSlotWorker<B: BlockT> {
 		Some(SlotResult { block: B::new(header, body), storage_proof })
 	}
 
+	/// no doc
 	fn author_send_vote(&mut self, header: &B::Header);
 
+	/// no doc
 	fn propagate_vote(&mut self, header: &B::Header);
 
 	// async fn propagate_vote<S: SelectChain<B>>(&mut self, select_chain: S);
@@ -931,8 +933,8 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 							break;
 						},
 					}
-				}
-			},
+				},
+			}
 			CommitteeState::WaitNextBlock=>{
 				log::info!("CommitteeState::WaitNextBlock");
 
@@ -1117,7 +1119,6 @@ pub async fn aura_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 
 	// let mut slots =
 	// 	Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
-
 	// let mut notification_stream = client.clone().import_notification_stream();
 
 	loop {
