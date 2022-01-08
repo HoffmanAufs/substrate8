@@ -123,7 +123,7 @@ where
 	IDP: CreateInherentDataProviders<Block, ()>,
 	IDP::InherentDataProviders: crate::InherentDataProviderExt,
 {
-	pub async fn next_block(&mut self) -> Result<SlotInfo<Block>, Error>{
+	pub async fn _next_block(&mut self) -> Result<SlotInfo<Block>, Error>{
 		loop{
 			Delay::new(Duration::new(1,0)).await;
 

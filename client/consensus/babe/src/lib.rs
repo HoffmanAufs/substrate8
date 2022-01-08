@@ -752,7 +752,7 @@ where
 		epoch_descriptor: &ViableEpochDescriptor<B::Hash, NumberFor<B>, Epoch>,
 	) -> Option<Self::Claim> {
 
-		let (tx, mut rx) = mpsc::unbounded();
+		let (_tx, mut rx) = mpsc::unbounded();
 		let mut vote_result = vec![];
 
 		let mut rng = rand::thread_rng();

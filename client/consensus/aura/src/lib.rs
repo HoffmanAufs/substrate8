@@ -408,7 +408,7 @@ where
 		max_block_proposal_slot_portion,
 	});
 
-	Ok(sc_consensus_aura_slots::aura_author_slot_worker(
+	Ok(sc_consensus_aura_slots::start_slot_worker(
 		slot_duration,
 		client.clone(),
 		select_chain,
@@ -776,29 +776,29 @@ where
 
 	fn author_send_vote(&mut self, header: &B::Header){
 		if let Ok(committee) = authorities(self.client.as_ref(), &BlockId::Hash(header.hash())){
-			let mut peer_vec: Vec<PeerId> = vec![];
-			for (i, member) in committee.iter().enumerate(){
-				log::info!("{}: {:?}", i, member);
+			// let mut peer_vec: Vec<PeerId> = vec![];
+			// for (i, member) in committee.iter().enumerate(){
+			// 	log::info!("{}: {:?}", i, member);
 
-				// match PeerId::from_bytes(member.as_slice()){
-				// 	Ok(peer)=>{ peer_vec.push(peer);},
-				// 	Err(e)=>{log::info!("convert err:{}", e);}
-				// }
+			// 	// match PeerId::from_bytes(member.as_slice()){
+			// 	// 	Ok(peer)=>{ peer_vec.push(peer);},
+			// 	// 	Err(e)=>{log::info!("convert err:{}", e);}
+			// 	// }
 
-				// peer_vec.push(member.into());
-				// log::info!("{}: {:?}", i, member);
-				// if let Ok(peer) = PeerId::from_bytes(member.clone().to_raw_vec().as_slice()){
-				// 	peer_vec.push(peer);
-				// };
-			}
+			// 	// peer_vec.push(member.into());
+			// 	// log::info!("{}: {:?}", i, member);
+			// 	// if let Ok(peer) = PeerId::from_bytes(member.clone().to_raw_vec().as_slice()){
+			// 	// 	peer_vec.push(peer);
+			// 	// };
+			// }
 
-			let vote_num = {
-				let mut rng = rand::thread_rng();
-				rng.gen::<u64>() & 0xFFFFu64
-			};
-			let &sync_id = header.number();
-			let vote_data = <VoteData<B>>::new(vote_num, sync_id);
-			self.sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data, peer_vec));
+			// let vote_num = {
+			// 	let mut rng = rand::thread_rng();
+			// 	rng.gen::<u64>() & 0xFFFFu64
+			// };
+			// let &sync_id = header.number();
+			// let vote_data = <VoteData<B>>::new(vote_num, sync_id);
+			// self.sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data, peer_vec));
 			// self.sync_oracle.ve_request()
 		}
 	}
