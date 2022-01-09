@@ -369,8 +369,8 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 					if let Ok(msg) = <VoteElectionNotification<B> as Decode>::decode(&mut message.as_ref()){
 						match msg {
 							VoteElectionNotification::Vote(vote_data) => {
-								log::info!("<<<< vote: {:?} from: {:?}", vote_data, remote);
 								self.vote_notification_tx.as_ref().map(|v|{
+									log::info!("<<<< vote: {:?} from: {:?}", vote_data, remote);
 									let _ = v.unbounded_send((vote_data.clone(), remote));
 								});
 
@@ -496,30 +496,26 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 		let local_peer_id = self.service.local_peer_id();
 		for (who, peer) in self.peers.iter_mut() {
 			if ! (matches!(peer.role, ObservedRole::Authority)) {
-				// log::info!("{:?} not authority, client/network/src/producer_select.rs:317", peer);
 				continue;
 			}
 
 			propagated_numbers += 1;
 
-			if who == local_peer_id {
-				log::info!(">>>> {} to {:?}, client/network/src/producer_select.rs:522", vote_num, local_peer_id);
-				let _ = self.local_event_tx.unbounded_send(
-					Event::NotificationsReceived{
-						remote: local_peer_id.clone(), 
-						messages: vec![(self.protocol_name.clone(), Bytes::from(to_send.clone()))],
-					}
-				);
-			}
-			else{
-				log::info!(">>>> {} to {:?}, client/network/src/producer_select.rs:513", vote_num, who);
-				self.service.write_notification(
-					who.clone(),
-					self.protocol_name.clone(),
-					to_send.clone(),
-				);
-			}
+			log::info!(">>>> {} to {:?}, client/network/src/producer_select.rs:513", vote_num, who);
+			self.service.write_notification(
+				who.clone(),
+				self.protocol_name.clone(),
+				to_send.clone(),
+			);
 		}
+
+		log::info!(">>>> {} to {:?}, client/network/src/producer_select.rs:522", vote_num, local_peer_id);
+		let _ = self.local_event_tx.unbounded_send(
+			Event::NotificationsReceived{
+				remote: local_peer_id.clone(), 
+				messages: vec![(self.protocol_name.clone(), Bytes::from(to_send.clone()))],
+			}
+		);
 
 		if let Some(ref metriecs) = self.metrics {
 			metriecs.propagated_numbers.inc_by(propagated_numbers as _)

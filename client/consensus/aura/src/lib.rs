@@ -76,7 +76,7 @@ use sp_consensus::{
 	VoteData, VoteElectionRequest,
 };
 use sp_consensus_slots::Slot;
-use sp_core::crypto::{Pair, Public};
+use sp_core::crypto::{Pair, Public, CryptoTypePublicPair};
 use sp_inherents::CreateInherentDataProviders;
 use sp_keystore::{SyncCryptoStore, SyncCryptoStorePtr};
 use sp_runtime::{
@@ -581,61 +581,27 @@ where
 		epoch_data: &Self::EpochData,
 	) -> Option<Self::Claim> {
 
-		// let mut election_result = vec![];
-		// let authorities_len = self.authorities_len(&epoch_data);
-
-		// let &parent_id = header.number();
-
-		// if self.sync_oracle().is_author(){
-		// 	self.sync_oracle().prepare_vote(parent_id, Duration::new(2,0));
-		// }
-
-		// thread::sleep(Duration::new(0, 100_000_000));
-
-		// let mut rng = rand::thread_rng();
-		// let local_random = rng.gen::<u64>() & 0xFFFFu64;
-
-		// let vote_data = <VoteData<B>>::new(local_random, parent_id);
-		// let (tx, mut rx) = mpsc::unbounded();
-		// self.sync_oracle().send_vote(vote_data.clone(), tx);
-
-		// thread::sleep(Duration::new(2,0));
-
-		// if self.sync_oracle().is_author(){
-		// 	self.sync_oracle().send_election_result();
-		// }
-
-		// let mut i = 0;
-		// let (timeout_count, timeout_interval) = (50, 20);
-		// loop{
-		// 	if let Ok(Some(rank)) = rx.try_next(){
-		// 		election_result.push(rank);
-		// 		continue;
-		// 	}
-
-		// 	thread::sleep(Duration::new(0, timeout_interval*1_000_000));
-		// 	i += 1;
-		// 	if i >= timeout_count{
-		// 		break;
-		// 	}
-		// }
-
-		// // election_result.iter().for_each(|i|{log::info!("election result: {:?}", i)});
-
-		// let claim_delay = claim_delay(authorities_len, election_result);
-
-		// if claim_delay.is_none(){
-		// 	return None
-		// }
-
+		let fixed_index = 1;
 		let authors = epoch_data;
-		let expect_author = authors.get(0)?;
+		let expect_author = authors.get(fixed_index)?;
+
+		let _key_type = <AuthorityId<P> as AppKey>::ID;
+
+		let _public_type_pair = expect_author.clone().to_public_crypto_pair();
+		if let Ok(keys) = SyncCryptoStore::keys(&*self.keystore, sp_application_crypto::key_types::AURA){
+			for CryptoTypePublicPair(crypto_type, public) in keys.iter(){
+				log::info!("{:?}, {:?}", crypto_type, public);
+			}
+		}
+
+		// let expect_author = slot_author(slot, epoch_data);
 
 		if SyncCryptoStore::has_keys(
 			&*self.keystore,
 			&[(expect_author.to_raw_vec(), sp_application_crypto::key_types::AURA)],
 		){
-			let pre_digest = PreDigest{authority_index: 0, slot: slot};
+			// let pre_digest = PreDigest{authority_index: fixed_index.into(), slot: slot};
+			let pre_digest = PreDigest{authority_index: fixed_index as u32, slot: slot};
 			return Some((pre_digest, expect_author.clone()));
 		}
 		else{
@@ -813,7 +779,6 @@ where
 		self.sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
 		// log::info!("{:?}: {:?}", header.number(), header.hash());
 	}
-
 }
 
 fn aura_err<B: BlockT>(error: Error<B>) -> Error<B> {

@@ -601,8 +601,8 @@ enum AuthorState{
 pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	_slot_duration: SlotDuration<T>,
 	client: Arc<C>,
-	_select_chain: S,
-	_worker: W,
+	select_chain: S,
+	mut worker: W,
 	mut sync_oracle: SO,
 	_create_inherent_data_providers: CIDP,
 	_can_author_with: CAW,
@@ -618,12 +618,11 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
 	CAW: CanAuthorWith<B> + Send,
 {
-	let mut state = AuthorState::WaitStart;
-
 	let (election_tx, mut election_rx) = mpsc::unbounded();
 	sync_oracle.ve_request(VoteElectionRequest::BuildElectionStream(election_tx));
 	let mut imported_blocks_stream = client.import_notification_stream().fuse();
 
+	let mut state = AuthorState::WaitStart;
 	loop{
 		match state {
 			AuthorState::WaitStart=>{
@@ -636,16 +635,17 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 					let timeout = Delay::new(rest_delay_duration);
 
 					futures::select!{
-						_ = imported_blocks_stream.next()=>{
-							// log::info!("import block: {:?}", block);
-							log::info!("import block");
-							if sync_oracle.is_major_syncing(){
-								state = AuthorState::WaitStart;
-								break;
-							}
-							else{
-								state = AuthorState::WaitProposal;
-								break;
+						block = imported_blocks_stream.next()=>{
+							if let Some(block) = block{
+								log::info!("import block");
+								if sync_oracle.is_major_syncing(){
+									state = AuthorState::WaitStart;
+									break;
+								}
+								else{
+									state = AuthorState::WaitProposal;
+									break;
+								}
 							}
 						},
 						_ = election_rx.select_next_some()=>{
@@ -660,8 +660,11 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 			},
 			AuthorState::WaitProposal=>{
 				log::info!("AuthorState::WaitProposal");
-				let full_timeout_duration = Duration::from_secs(15*3);
+
 				// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
+				// worker.propagate_vote(select_chain);
+
+				let full_timeout_duration = Duration::from_secs(15*3);
 				let start_time = SystemTime::now();
 				let mut election_count = 0;
 
@@ -703,21 +706,18 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 }
 
 enum CommitteeState{
-	Init,
-	WaitSyncFinish,
-	WaitVoteStart,
+	WaitStart,
 	RecvVote,
-	WaitNextBlock,
 }
 
 /// aura committee worker
 pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
-	slot_duration: SlotDuration<T>,
-	_client: Arc<C>,
-	select_chain: S,
+	_slot_duration: SlotDuration<T>,
+	client: Arc<C>,
+	_select_chain: S,
 	mut _worker: W,
 	mut sync_oracle: SO,
-	create_inherent_data_providers: CIDP,
+	_create_inherent_data_providers: CIDP,
 	_can_author_with: CAW,
 ) where
 	B: BlockT,
@@ -730,172 +730,90 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	CIDP::InherentDataProviders: InherentDataProviderExt + Send,
 	CAW: CanAuthorWith<B> + Send,
 {
-	// let SlotDuration(slot_duration) = slot_duration;
-
-	// let chain_head = match select_chain.best_chain().await{
-	// 	Ok(x)=>x,
-	// 	Err(_)=>{
-	// 		log::info!("author: chain_head err");
-	// 		return
-	// 	}
-	// };
-
-	let mut slots =
-		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
-
 	let (vote_tx, mut vote_rx) = mpsc::unbounded();
 	sync_oracle.ve_request(VoteElectionRequest::BuildVoteStream(vote_tx));
+	let mut imported_blocks_stream = client.import_notification_stream().fuse();
+	let mut finality_notification_stream = client.finality_notification_stream().fuse();
 
-	// let vote_config: Option<NumberFor<B>> = None;
-	let mut vote_map = BTreeMap::new();
-
-	let mut state = CommitteeState::Init;
+	let mut state = CommitteeState::WaitStart;
 	loop{
 		match state{
-			CommitteeState::Init =>{
-				log::info!("Committee::Init");
-				state = CommitteeState::WaitSyncFinish;
-				continue;
-			},
-			CommitteeState::WaitSyncFinish=>{
-				log::info!("Committee::WaitSyncFinish");
-				if !sync_oracle.is_major_syncing(){
-					state = CommitteeState::WaitVoteStart;
-					continue;
-				}
-
-				let total_delay = Duration::from_millis(500);
-				let start_ts = SystemTime::now();
+			CommitteeState::WaitStart=>{
 				loop{
-					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
-					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
-					let timeout = Delay::new(rest_delay);
-
 					futures::select!{
-						_ = slots.next_slot().fuse()=>{
-							continue;
-							// if sync_oracle.is_major_syncing(){
-							// 	continue;
-							// }
-							// else{
-							// 	state = CommitteeState::SkipBlock;
-							// 	break;
-							// }
-						},
-						_ = vote_rx.select_next_some()=>{
-							continue;
-						},
-						_ = timeout.fuse() => {
-							if sync_oracle.is_major_syncing(){
-								state = CommitteeState::WaitSyncFinish;
-								break;
-							}
-							else{
-								state = CommitteeState::WaitVoteStart;
-								break;
+						block = imported_blocks_stream.next()=>{
+							if let Some(block) = block{
+								if sync_oracle.is_major_syncing(){
+									state = CommitteeState::WaitStart;
+									break;
+								}
+								else{
+									// if in_committee{
+									if true{
+										// state = CommitteeState::RecvVote(block.hash());
+										state = CommitteeState::RecvVote;
+										break;
+									}
+									else{
+										state = CommitteeState::WaitStart;
+										break;
+									}
+								}
 							}
 						},
-					}
-				}
-			},
-			CommitteeState::WaitVoteStart=>{
-				log::info!("Committee::WaitVoteStart");
-				let total_delay = Duration::from_millis(500);
-				let start_ts = SystemTime::now();
-				loop{
-					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
-					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
-					let timeout = Delay::new(rest_delay);
-
-					futures::select!{
-						_ = slots.next_slot().fuse() => {
-							state = {
-								if true{ // in the committee at this block
-									CommitteeState::WaitVoteStart 
-								}
-								else{ 
-									CommitteeState::WaitSyncFinish
-								}
-							};
-							break;
+						vote = vote_rx.select_next_some()=>{
+							// save the vote
 						},
-						_ = vote_rx.select_next_some()=>{
-							continue;
-						},
-						_ = timeout.fuse() =>{
-							// Delay::new(Duration::from_millis(100)).await;
-							state = CommitteeState::RecvVote;
-							break;
+						_ = finality_notification_stream.next()=>{
+							// clear vote 
 						},
 					}
 				}
 			},
 			CommitteeState::RecvVote=>{
-				log::info!("Committee::RecvVote");
-				//TODO: config vote recv params
-				vote_map.clear();
+				let recv_duration = Duration::from_secs(10);
+				let full_timeout_duration = recv_duration;
+				let start_time = SystemTime::now();
 
-				let total_delay = Duration::from_millis(2000);
-				let start_ts = SystemTime::now();
 				loop{
-					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
-					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
-					let timeout = Delay::new(rest_delay);
-
+					let elapsed_duration = start_time.elapsed().unwrap_or(full_timeout_duration);
+					let rest_timeout_duration = full_timeout_duration
+						.checked_sub(elapsed_duration).unwrap_or(Duration::from_secs(0));
+					let timeout = Delay::new(rest_timeout_duration);
 					futures::select!{
-						_ = slots.next_slot().fuse()=>{
-							state = CommitteeState::WaitVoteStart;
-							break;
+						_ = imported_blocks_stream.next()=>{
+							if sync_oracle.is_major_syncing(){
+								state = CommitteeState::WaitStart;
+								break;
+							}
+							else{
+								// if is_committee{
+								if true{
+									state = CommitteeState::RecvVote;
+									break;
+								}
+								else{
+									state = CommitteeState::WaitStart;
+									break;
+								}
+							}
 						},
 						vote = vote_rx.select_next_some()=>{
-							let (VoteData{vote_num, ..}, peer_id) = vote;
-							// log::info!("({},{}), {}", vote_num, sync_id, peer_id);
-							if true {
-								vote_map.insert(vote_num, peer_id);
-							}
+							//TODO: update current hash vote_result
 							continue;
 						},
-						_ = timeout.fuse() =>{
-							state = CommitteeState::WaitNextBlock;
-							break;
+						_ = finality_notification_stream.next()=>{
+							// clear finality block vote 
+							continue;
+						},
+						_ = timeout.fuse()=>{
+							//TODO: send back election
 						},
 					}
 				}
 			}
-			CommitteeState::WaitNextBlock=>{
-				log::info!("CommitteeState::WaitNextBlock");
-
-				//TODO send election back
-				// log::info!("vote result: ");
-				// for (i, (k, v)) in vote_map.iter().enumerate(){
-				// 	log::info!("{}: ({}, {})", i, k, v);
-				// }
-				let total_delay = Duration::from_millis(10_000);
-				let start_ts = SystemTime::now();
-				loop{
-					let elapsed_duration = start_ts.elapsed().unwrap_or(total_delay.clone());
-					let rest_delay = total_delay.checked_sub(elapsed_duration).unwrap_or(Duration::from_millis(0));
-					let timeout = Delay::new(rest_delay);
-
-					futures::select!{
-						_ = slots.next_slot().fuse()=>{
-							state = CommitteeState::WaitSyncFinish;
-							break;
-						},
-						_ = vote_rx.select_next_some()=>{
-							continue;
-						},
-						_ = timeout.fuse() => {
-							// log::info!("wait block time out");
-							state = CommitteeState::WaitSyncFinish;
-							break;
-						},
-					}
-				}
-			},
 		}
 	}
-
 }
 
 // fn committee<A, B, C>(client: &C, at: &BlockId<B>) -> Result<Vec<A>, ConsensusError>
