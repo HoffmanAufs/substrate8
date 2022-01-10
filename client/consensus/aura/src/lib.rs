@@ -576,16 +576,18 @@ where
 
 	fn claim_slot(
 		&mut self,
-		_header: &B::Header,
+		header: &B::Header,
 		slot: Slot,
 		epoch_data: &Self::EpochData,
 	) -> Option<Self::Claim> {
+		// let block_hash = header.number();
+		// log::info!("{:?}", block_hash);
 
-		let fixed_index = 1;
+		let fixed_index = 0;
 		let authors = epoch_data;
 		let expect_author = authors.get(fixed_index)?;
 
-		let _key_type = <AuthorityId<P> as AppKey>::ID;
+		// let _key_type = <AuthorityId<P> as AppKey>::ID;
 
 		let _public_type_pair = expect_author.clone().to_public_crypto_pair();
 		if let Ok(keys) = SyncCryptoStore::keys(&*self.keystore, sp_application_crypto::key_types::AURA){
@@ -593,6 +595,34 @@ where
 				log::info!("{:?}, {:?}", crypto_type, public);
 			}
 		}
+
+		let sr25519_public_keys = SyncCryptoStore::sr25519_public_keys(&*self.keystore, sp_application_crypto::key_types::AURA);
+		if sr25519_public_keys.len() == 1{
+			let public_type_pair = sr25519_public_keys[0].to_public_crypto_pair();
+
+			let vote_num = {
+				let mut rng = rand::thread_rng();
+				rng.gen::<u64>() & 0xFFFFu64
+			};
+			let msg = vote_num.encode();
+
+			if let Ok(Some(sig)) = SyncCryptoStore::sign_with(
+				&*self.keystore,
+				<AuthorityId<P> as AppKey>::ID,
+				&public_type_pair,
+				&msg,
+			){
+				log::info!("random:{:?}, sign: {:?}", vote_num, sig);
+
+				// let sign_ret = P::verify(sig, &msg, &sr25519_public_keys[0]);
+				// log::info!("{:?}", sign_ret);
+			}
+
+		}
+
+		// for key in sr25519_public_keys.iter(){
+		// 	log::info!("sr25519: {:?}", key);
+		// }
 
 		// let expect_author = slot_author(slot, epoch_data);
 
