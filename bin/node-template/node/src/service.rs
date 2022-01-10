@@ -320,56 +320,56 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 	}
 
 
-	// // committee worker
-	// if role.is_authority() {
-	// 	let proposer_factory = sc_basic_authorship::ProposerFactory::new(
-	// 		task_manager.spawn_handle(),
-	// 		client.clone(),
-	// 		transaction_pool.clone(),
-	// 		prometheus_registry.as_ref(),
-	// 		telemetry.as_ref().map(|x| x.handle()),
-	// 	);
+	// committee worker
+	if role.is_authority() {
+		let proposer_factory = sc_basic_authorship::ProposerFactory::new(
+			task_manager.spawn_handle(),
+			client.clone(),
+			transaction_pool.clone(),
+			prometheus_registry.as_ref(),
+			telemetry.as_ref().map(|x| x.handle()),
+		);
 
-	// 	let can_author_with =
-	// 		sp_consensus::CanAuthorWithNativeVersion::new(client.executor().clone());
+		let can_author_with =
+			sp_consensus::CanAuthorWithNativeVersion::new(client.executor().clone());
 
-	// 	let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
-	// 	let raw_slot_duration = slot_duration.slot_duration();
+		let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
+		let raw_slot_duration = slot_duration.slot_duration();
 
-	// 	let aura_committee = sc_consensus_aura::start_aura_committee::<AuraPair, _, _, _, _, _, _, _, _, _, _, _>(
-	// 		StartAuraParams {
-	// 			slot_duration,
-	// 			client: client.clone(),
-	// 			select_chain: select_chain.clone(),
-	// 			block_import: block_import.clone(),
-	// 			proposer_factory,
-	// 			create_inherent_data_providers: move |_, ()| async move {
-	// 				let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
+		let aura_committee = sc_consensus_aura::start_aura_committee::<AuraPair, _, _, _, _, _, _, _, _, _, _, _>(
+			StartAuraParams {
+				slot_duration,
+				client: client.clone(),
+				select_chain: select_chain.clone(),
+				block_import: block_import.clone(),
+				proposer_factory,
+				create_inherent_data_providers: move |_, ()| async move {
+					let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
 
-	// 				let slot =
-	// 					sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_duration(
-	// 						*timestamp,
-	// 						raw_slot_duration,
-	// 					);
+					let slot =
+						sp_consensus_aura::inherents::InherentDataProvider::from_timestamp_and_duration(
+							*timestamp,
+							raw_slot_duration,
+						);
 
-	// 				Ok((timestamp, slot))
-	// 			},
-	// 			force_authoring,
-	// 			backoff_authoring_blocks,
-	// 			keystore: keystore_container.sync_keystore(),
-	// 			can_author_with,
-	// 			sync_oracle: network.clone(),
-	// 			justification_sync_link: network.clone(),
-	// 			block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
-	// 			max_block_proposal_slot_portion: None,
-	// 			telemetry: telemetry.as_ref().map(|x| x.handle()),
-	// 		},
-	// 	)?;
+					Ok((timestamp, slot))
+				},
+				force_authoring,
+				backoff_authoring_blocks,
+				keystore: keystore_container.sync_keystore(),
+				can_author_with,
+				sync_oracle: network.clone(),
+				justification_sync_link: network.clone(),
+				block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
+				max_block_proposal_slot_portion: None,
+				telemetry: telemetry.as_ref().map(|x| x.handle()),
+			},
+		)?;
 
-	// 	// the AURA authoring task is considered essential, i.e. if it
-	// 	// fails we take down the service with it.
-	// 	task_manager.spawn_essential_handle().spawn_blocking("aura-committee", aura_committee);
-	// }
+		// the AURA authoring task is considered essential, i.e. if it
+		// fails we take down the service with it.
+		task_manager.spawn_essential_handle().spawn_blocking("aura-committee", aura_committee);
+	}
 
 	// if the node isn't actively participating in consensus then it doesn't
 	// need a keystore, regardless of which protocol we use below.

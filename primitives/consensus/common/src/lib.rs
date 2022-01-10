@@ -373,13 +373,14 @@ pub trait SlotData {
 #[derive(Debug)]
 pub enum VoteElectionRequest<B: BlockT>{
 	// ConfigNewVoteRound(NumberFor<B>),
-	BuildVoteStream(mpsc::UnboundedSender<(VoteDataV2<B>, PeerId)>),
+	BuildVoteStream(mpsc::UnboundedSender<VoteDataV2<B>>),
 	BuildElectionStream(mpsc::UnboundedSender<Vec<(PeerId, u64)>>),
 	SendVote(VoteDataV2<B>),
 	// SendElectionResult(Vec<PeerId>),
 
 	// test usage
 	PropagateVote(VoteDataV2<B>),
+	PropagateElection(ElectionData<B>),
 	ReturnElectionResult,
 }
 
@@ -425,6 +426,25 @@ where
 			// hash: hash,
 			// sig_data: sig_bytes.as_slice(),
 			// pub_data: pub_bytes.as_slice(),
+		}
+	}
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct ElectionData<B: BlockT>{
+	pub hash: B::Hash,
+	pub sig_bytes: Vec<u8>,
+	pub ranks: Vec<Vec<u8>>,
+	pub pub_bytes: Vec<u8>,
+}
+
+impl <B:BlockT> for ElectionData<B>{
+	pub fn new(hash: B::Hash, sig_bytes: Vec<u8>, ranks: Vec<Vec<u8>>, pub_bytes: Vec<u8>)->Self{
+		Self{
+			hash,
+			sig_bytes,
+			ranks,
+			pub_bytes,
 		}
 	}
 }

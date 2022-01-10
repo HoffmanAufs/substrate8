@@ -864,6 +864,53 @@ where
 		// self.sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
 		// log::info!("{:?}: {:?}", header.number(), header.hash());
 	}
+
+	fn verify_vote(&mut self, vote_data: &VoteDataV2<B>)->bool{
+		let VoteDataV2{hash, sig_bytes, pub_bytes} = vote_data;
+		if let Ok(sig) = <P::Signature as Decode>::decode(&mut sig_bytes.as_slice()){
+			if let Ok(verify_public) = <AuthorityId<P> as Decode>::decode(&mut pub_bytes.as_slice()){
+				let msg = hash.encode();
+				let sign_ret = P::verify(&sig, &msg, &verify_public);
+				return sign_ret;
+			}
+		}
+		false
+	}
+
+	fn propagate_election(&mut self, hash: B::Hash, election_ret: Vec<Vec<u8>>){
+		let sr25519_public_keys = SyncCryptoStore::sr25519_public_keys(
+			&*self.keystore, 
+			sp_application_crypto::key_types::AURA
+		);
+
+		if sr25519_public_keys.len() == 1{
+			// let verify_public = <AuthorityId<P> as Decode>::decode(&mut sr25519_public_keys[0].to_raw_vec().as_slice()).unwrap();
+			let public_type_pair = sr25519_public_keys[0].to_public_crypto_pair();
+
+			let mut pre_election:Vec<u32>= vec![];
+			pre_election.extend(hash.encode().iter());
+			pre_election.extend(election_ret.encode().iter());
+
+			let msg = pre_result;
+
+			if let Ok(Some(sig_bytes)) = SyncCryptoStore::sign_with(
+				&*self.keystore,
+				<AuthorityId<P> as AppKey>::ID,
+				&public_type_pair,
+				&msg,
+			){
+				// let vote_data = VoteDataV2::<B, P>::{
+				// 	sig_bytes,
+				// 	hash: header.hash(),
+				// 	author: sr25519_public_keys[0].clone(),
+				// 	// header.hash(),
+				// };
+				let pub_bytes = sr25519_public_keys[0].to_raw_vec();
+				let election_data = <VoteDataV2<B>>::new(hash, sig_bytes, election_ret, pub_bytes);
+				self.sync_oracle.ve_request(VoteElectionRequest::PropagateElection(election_data));
+			}
+		}
+	}
 }
 
 fn aura_err<B: BlockT>(error: Error<B>) -> Error<B> {

@@ -759,9 +759,9 @@ impl<B: BlockT + 'static, H: ExHashT> NetworkService<B, H> {
 	) {
 		// We clone the `NotificationsSink` in order to be able to unlock the network-wide
 		// `peers_notifications_sinks` mutex as soon as possible.
-		if protocol.eq("/sup/producer-select/1"){
-			log::info!("write notification: {}", protocol);
-		}
+		// if protocol.eq("/sup/producer-select/1"){
+		// 	log::info!("write notification: {}", protocol);
+		// }
 
 		let sink = {
 			let peers_notifications_sinks = self.peers_notifications_sinks.lock();

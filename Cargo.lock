@@ -7354,6 +7354,7 @@ dependencies = [
  "futures-timer 3.0.2",
  "impl-trait-for-tuples",
  "log",
+ "num-bigint",
  "parity-scale-codec",
  "rand 0.7.3",
  "sc-client-api",

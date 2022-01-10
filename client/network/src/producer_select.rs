@@ -27,7 +27,7 @@ use std::{
 	time::{Duration, SystemTime},
 };
 
-use sp_consensus::{VoteDataV2, VoteElectionRequest, VoteData};
+use sp_consensus::{VoteDataV2, VoteElectionRequest, VoteData, ElectionData};
 
 const MAX_NOTIFICATION_SIZE: u64 = 16 * 1024 * 1024;
 const MAX_KNOWN_NOTIFICATIONS: usize = 10240; // ~300kb per peer + overhead.
@@ -173,12 +173,15 @@ impl<B: BlockT> ProducerSelectHandlerController<B>{
 				// log::info!("propaget_vote: {:?}", vote_data);
 				let _ = self.to_handler.unbounded_send(ToHandler::PropagateVote(vote_data));
 			},
+			VoteElectionNotification::PropagateElection(election_data)=>{
+				let _ = self.to_handler.unbounded_send(ToHandler::PropagateElection(election_data));
+			},
+			VoteElectionRequest::BuildVoteStream(tx) =>{
+				let _ = self.to_handler.unbounded_send(ToHandler::BuildVoteStream(tx));
+			},
 			_ =>{
 				log::info!("Handle request: {:?}", request);
 			}
-		// 	VoteElectionRequest::BuildVoteStream(tx) =>{
-		// 		let _ = self.to_handler.unbounded_send(ToHandler::BuildVoteStream(tx));
-		// 	}
 		// 	VoteElectionRequest::ReturnElectionResult =>{
 		// 		let _ = self.to_handler.unbounded_send(ToHandler::SendElectionResult);
 		// 	}
@@ -203,6 +206,7 @@ enum ToHandler<B: BlockT> {
 
 	// Request(VoteElectionRequest<B>),
 	PropagateVote(VoteDataV2<B>),
+	PropagateElection(ElectionData<B>),
 }
 
 /// Handler for transactions. Call [`TransactionsHandler::run`] to start the processing.
@@ -311,6 +315,9 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 							// self.pendng_response = Some(pending_response);
 							self.propagate_vote(vote_data);
 						},
+						ToHandler::PropagateElection(election_data)=>{
+							self.propagate_election(election_data);
+						}
 						// ToHandler::ConfigVoteRound(NumberFor<B>) =>{
 						// 	log::info!("vote round: {}")
 						// }
@@ -376,7 +383,8 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 					if let Ok(msg) = <VoteElectionNotification<B> as Decode>::decode(&mut message.as_ref()){
 						match msg {
 							VoteElectionNotification::VoteV2(vote_data)=>{
-								log::info!("<<<< vote_v2: {:?} from: {:?}", vote_data, remote);
+								log::info!("<<<< VoteElectionNotification:VoteV2");
+								// log::info!("<<<< vote_v2: {:?} from: {:?}", vote_data, remote);
 								self.vote_notification_tx.as_ref().map(|v|{
 									// let _ = v.unbounded_send((vote_data.clone(), remote));
 									let _ = v.unbounded_send(vote_data);
@@ -500,6 +508,40 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 		}
 	}
 
+	fn propagate_election(&mut self, election: ElectionResult){
+
+		// let to_send = VoteElectionNotification::VoteV2(vote_data).encode();
+		let to_send = VoteElectionNotification::Election(election).encode();
+
+		for (who, _) in self.peers.iter_mut() {
+			// if matches!(peer.role, ObservedRole::)) {
+			// 	continue;
+			// }
+
+			propagated_numbers += 1;
+
+			log::info!(">>>> {:?}, client/network/src/producer_select.rs:514", who);
+			self.service.write_notification(
+				who.clone(),
+				self.protocol_name.clone(),
+				to_send.clone(),
+			);
+		}
+
+		log::info!(">>>> to local_peer_id: client/network/src/producer_select.rs:522");
+		let local_peer_id = self.service.local_peer_id();
+		let _ = self.local_event_tx.unbounded_send(
+			Event::NotificationsReceived{
+				remote: local_peer_id.clone(), 
+				messages: vec![(self.protocol_name.clone(), Bytes::from(to_send.clone()))],
+			}
+		);
+
+		if let Some(ref metriecs) = self.metrics {
+			metriecs.propagated_numbers.inc_by(propagated_numbers as _)
+		}
+	}
+
 	fn propagate_vote(&mut self, vote_data: VoteDataV2<B>){
 		// log::info!("{:?}", vote_data);
 		let mut propagated_numbers = 0;
@@ -526,7 +568,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 		// 	},
 		// }
 
-		for (who, peer) in self.peers.iter_mut() {
+		for (who, _) in self.peers.iter_mut() {
 			// if matches!(peer.role, ObservedRole::)) {
 			// 	continue;
 			// }
