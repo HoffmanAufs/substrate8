@@ -191,6 +191,30 @@ where
 		}
 	}
 
+	pub async fn default_slot(&mut self)-> Result<SlotInfo<Block>, Error>{
+		let ends_in = time_until_next_slot(self.slot_duration);
+		// let ends_at = Instant::now() + ends_in;
+
+		let chain_head = self.client.best_chain().await?;
+		let inherent_data_providers = self
+			.create_inherent_data_providers
+			.create_inherent_data_providers(chain_head.hash(), ())
+			.await?;
+
+		let timestamp = inherent_data_providers.timestamp();
+		let slot = inherent_data_providers.slot();
+		let inherent_data = inherent_data_providers.create_inherent_data()?;
+
+		Ok(SlotInfo::new(
+			slot,
+			timestamp,
+			inherent_data,
+			self.slot_duration,
+			chain_head,
+			None,
+		))
+	}
+
 	/// Returns a future that fires when the next slot starts.
 	pub async fn next_slot(&mut self) -> Result<SlotInfo<Block>, Error> {
 		loop {

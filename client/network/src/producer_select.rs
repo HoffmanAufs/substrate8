@@ -114,6 +114,7 @@ impl ProducerSelectHandlerPrototype {
 			vote_recv_config: None,
 			pending_response: None,
 			vote_notification_tx: None,
+			election_notification_tx: None,
 			local_event_tx: local_event_tx,
 			local_event_rx: local_event_rx,
 
@@ -173,12 +174,15 @@ impl<B: BlockT> ProducerSelectHandlerController<B>{
 				// log::info!("propaget_vote: {:?}", vote_data);
 				let _ = self.to_handler.unbounded_send(ToHandler::PropagateVote(vote_data));
 			},
-			VoteElectionNotification::PropagateElection(election_data)=>{
+			VoteElectionRequest::PropagateElection(election_data)=>{
 				let _ = self.to_handler.unbounded_send(ToHandler::PropagateElection(election_data));
 			},
 			VoteElectionRequest::BuildVoteStream(tx) =>{
 				let _ = self.to_handler.unbounded_send(ToHandler::BuildVoteStream(tx));
 			},
+			VoteElectionRequest::BuildElectionStream(tx)=>{
+				let _ = self.to_handler.unbounded_send(ToHandler::BuildElectionStream(tx));
+			}
 			_ =>{
 				log::info!("Handle request: {:?}", request);
 			}
@@ -201,10 +205,11 @@ enum ToHandler<B: BlockT> {
 
 	PrepareVote(NumberFor<B>, Duration),
 	SendElectionResult,
-	BuildVoteStream(mpsc::UnboundedSender<VoteDataV2<B>>),
 	// ConfigVoteRound(NumberFor<B>),
 
 	// Request(VoteElectionRequest<B>),
+	BuildVoteStream(mpsc::UnboundedSender<VoteDataV2<B>>),
+	BuildElectionStream(mpsc::UnboundedSender<ElectionData<B>>),
 	PropagateVote(VoteDataV2<B>),
 	PropagateElection(ElectionData<B>),
 }
@@ -234,6 +239,7 @@ pub struct ProducerSelectHandler<B: BlockT + 'static, H: ExHashT> {
 	pending_response: Option<mpsc::UnboundedSender<Option<usize>>>,
 	// vote_notification_tx: Option<mpsc::UnboundedSender<(VoteData<B>, PeerId)>>,
 	vote_notification_tx: Option<mpsc::UnboundedSender<VoteDataV2<B>>>,
+	election_notification_tx: Option<mpsc::UnboundedSender<ElectionData<B>>>,
 
 	/// 
 	local_event_tx: mpsc::UnboundedSender<Event>,
@@ -254,7 +260,8 @@ enum VoteElectionNotification<B: BlockT>{
 	// #[indexed=2]
 	Vote(VoteData<B>),
 	// #[indexed=3]
-	Election(Vec<(Vec<u8>, u64)>),
+	// Election(Vec<(Vec<u8>, u64)>),
+	Election(ElectionData<B>),
 }
 
 /// Peer information
@@ -305,10 +312,13 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 						ToHandler::PrepareVote(sync_number, duration)=>{
 							self.prepare_vote(sync_number, duration);
 						}
+
 						ToHandler::BuildVoteStream(tx)=>{
 							self.vote_notification_tx = Some(tx);
 						},
-
+						ToHandler::BuildElectionStream(tx)=>{
+							self.election_notification_tx = Some(tx);
+						}
 						// request test
 						ToHandler::PropagateVote(vote_data) => {
 							// log::info!("propagate vote: {:?}", vote_data);
@@ -420,31 +430,37 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 								// 	}
 								// }
 							},
-							VoteElectionNotification::Election(election_value_vec) =>{
-								// let election_vec = election_vec_value.iter().map()
-								let mut election_result_vec = vec![];
-								election_value_vec.iter().for_each(|(peer, vote_num)|{
-									if let Ok(peer_id) = PeerId::from_bytes(peer){
-										election_result_vec.push((peer_id, vote_num));
-									}
+							VoteElectionNotification::Election(election_data)=>{
+								self.election_notification_tx.as_ref().map(|v|{
+									log::info!("Election");
+									let _ = v.unbounded_send(election_data);
 								});
-								log::info!("<<<< election from remote: {:?} client/network/src/producer_select.rs:350", remote);
-								election_result_vec.iter().enumerate().for_each(|(i,p)|{
-									println!("{}, {:?} client/network/src/producer_select.rs:352", i, p);
-								});
-
-								// let election_result_vec = election_value_vec.iter().filter_map(|(p,n)|PeerId::from_bytes(p))
-								let local_peer_id = self.service.local_peer_id();
-								let election_peer_vec = election_value_vec.iter()
-									.filter_map(|(peer, _n)|PeerId::from_bytes(peer).ok())
-									.collect::<Vec<_>>();
-
-								let rank = election_peer_vec.iter().position(|peer|peer==local_peer_id);
-								if let Some(mut tx) = self.pending_response.clone(){
-									// log::info!("return vote rank: {:?}", rank);
-									let _ = tx.send(rank).await;
-								}
 							},
+							// VoteElectionNotification::Election(election_value_vec) =>{
+							// 	// let election_vec = election_vec_value.iter().map()
+							// 	let mut election_result_vec = vec![];
+							// 	election_value_vec.iter().for_each(|(peer, vote_num)|{
+							// 		if let Ok(peer_id) = PeerId::from_bytes(peer){
+							// 			election_result_vec.push((peer_id, vote_num));
+							// 		}
+							// 	});
+							// 	log::info!("<<<< election from remote: {:?} client/network/src/producer_select.rs:350", remote);
+							// 	election_result_vec.iter().enumerate().for_each(|(i,p)|{
+							// 		println!("{}, {:?} client/network/src/producer_select.rs:352", i, p);
+							// 	});
+
+							// 	// let election_result_vec = election_value_vec.iter().filter_map(|(p,n)|PeerId::from_bytes(p))
+							// 	let local_peer_id = self.service.local_peer_id();
+							// 	let election_peer_vec = election_value_vec.iter()
+							// 		.filter_map(|(peer, _n)|PeerId::from_bytes(peer).ok())
+							// 		.collect::<Vec<_>>();
+
+							// 	let rank = election_peer_vec.iter().position(|peer|peer==local_peer_id);
+							// 	if let Some(mut tx) = self.pending_response.clone(){
+							// 		// log::info!("return vote rank: {:?}", rank);
+							// 		let _ = tx.send(rank).await;
+							// 	}
+							// },
 						}
 					}
 				}
@@ -472,46 +488,47 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 	}
 
 	async fn send_election_result(&mut self){
-		let mut propagated_numbers = 0;
-		let peerid_bytes_vec = self.vote_map.iter().map(|(&vote_num, peer)|(peer.to_bytes(), vote_num)).collect::<Vec<_>>();
+		// let mut propagated_numbers = 0;
+		// let peerid_bytes_vec = self.vote_map.iter().map(|(&vote_num, peer)|(peer.to_bytes(), vote_num)).collect::<Vec<_>>();
 
-		let local_peer_id = self.service.local_peer_id();
+		// let local_peer_id = self.service.local_peer_id();
 
-		if matches!(self.service.local_role(), Role::Authority){
-			if let Some(mut tx) = self.pending_response.clone(){
-				let rank = self.vote_map.iter().position(|(_, p)|p==local_peer_id);
-				// log::info!("return vote rank: {:?}", rank);
-				let _ = tx.send(rank).await;
-			}
-		}
+		// if matches!(self.service.local_role(), Role::Authority){
+		// 	if let Some(mut tx) = self.pending_response.clone(){
+		// 		let rank = self.vote_map.iter().position(|(_, p)|p==local_peer_id);
+		// 		// log::info!("return vote rank: {:?}", rank);
+		// 		let _ = tx.send(rank).await;
+		// 	}
+		// }
 
-		let to_send = <VoteElectionNotification<B>>::Election(peerid_bytes_vec).encode();
-		// let to_send = self.vote_map.iter().map(|(_, v)|v.to_bytes()).collect::<Vec<_>>().encode();
+		// let to_send = <VoteElectionNotification<B>>::Election(peerid_bytes_vec).encode();
+		// // let to_send = self.vote_map.iter().map(|(_, v)|v.to_bytes()).collect::<Vec<_>>().encode();
 
-		for (_, who) in self.vote_map.iter(){
-			// if who == local_peer_id{
-			// 	continue;
-			// }
-		// for (who, peer) in self.peers.iter_mut() {
-			propagated_numbers += 1;
+		// for (_, who) in self.vote_map.iter(){
+		// 	// if who == local_peer_id{
+		// 	// 	continue;
+		// 	// }
+		// // for (who, peer) in self.peers.iter_mut() {
+		// 	propagated_numbers += 1;
 
-            log::info!(">>>> Election to {:?}, client/network/src/producer_select.rs:446", who);
-            self.service.write_notification(
-                who.clone(),
-                self.protocol_name.clone(),
-                to_send.clone(),
-            );
-		}
+        //     log::info!(">>>> Election to {:?}, client/network/src/producer_select.rs:446", who);
+        //     self.service.write_notification(
+        //         who.clone(),
+        //         self.protocol_name.clone(),
+        //         to_send.clone(),
+        //     );
+		// }
 
-		if let Some(ref metriecs) = self.metrics {
-			metriecs.propagated_numbers.inc_by(propagated_numbers as _)
-		}
+		// if let Some(ref metriecs) = self.metrics {
+		// 	metriecs.propagated_numbers.inc_by(propagated_numbers as _)
+		// }
 	}
 
-	fn propagate_election(&mut self, election: ElectionResult){
+	fn propagate_election(&mut self, election_data: ElectionData<B>){
 
+		let mut propagated_numbers = 0;
 		// let to_send = VoteElectionNotification::VoteV2(vote_data).encode();
-		let to_send = VoteElectionNotification::Election(election).encode();
+		let to_send = VoteElectionNotification::Election(election_data).encode();
 
 		for (who, _) in self.peers.iter_mut() {
 			// if matches!(peer.role, ObservedRole::)) {
@@ -520,7 +537,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 
 			propagated_numbers += 1;
 
-			log::info!(">>>> {:?}, client/network/src/producer_select.rs:514", who);
+			log::info!(">>>> Election {:?}, client/network/src/producer_select.rs:533", who);
 			self.service.write_notification(
 				who.clone(),
 				self.protocol_name.clone(),
@@ -528,7 +545,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 			);
 		}
 
-		log::info!(">>>> to local_peer_id: client/network/src/producer_select.rs:522");
+		log::info!(">>>> Election to local_peer_id: client/network/src/producer_select.rs:541");
 		let local_peer_id = self.service.local_peer_id();
 		let _ = self.local_event_tx.unbounded_send(
 			Event::NotificationsReceived{
@@ -546,30 +563,10 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 		// log::info!("{:?}", vote_data);
 		let mut propagated_numbers = 0;
 
-		// let to_send = vote_data.encode();
 		let to_send = VoteElectionNotification::VoteV2(vote_data).encode();
 
-		// match <VoteElectionNotification<B> as Decode>::decode(&mut to_send.as_ref()){
-		// 	Ok(msg)=>{
-		// 		match msg{
-		// 			VoteElectionNotification::VoteV2(vote_data)=>{
-		// 				log::info!("VoteData: v2");
-		// 			},
-		// 			VoteElectionNotification::Vote(vote_data)=>{
-		// 				log::info!("VoteData: v1");
-		// 			},
-		// 			VoteElectionNotification::Election(_)=>{
-		// 				log::info!("election");
-		// 			}
-		// 		}
-		// 	},
-		// 	Err(e)=>{
-		// 		log::info!("decode error");
-		// 	},
-		// }
-
 		for (who, _) in self.peers.iter_mut() {
-			// if matches!(peer.role, ObservedRole::)) {
+			// if matches!(peer.role, ObservedRole::Light)) {
 			// 	continue;
 			// }
 
