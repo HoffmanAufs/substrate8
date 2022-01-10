@@ -8,6 +8,7 @@ use crate::{
 	Event, ExHashT, ObservedRole,
 };
 
+use sp_core::Pair;
 use codec::{Encode, Decode};
 use bytes::Bytes;
 use futures::{channel::mpsc, prelude::*};
@@ -26,7 +27,7 @@ use std::{
 	time::{Duration, SystemTime},
 };
 
-use sp_consensus::{VoteData, VoteElectionRequest};
+use sp_consensus::{VoteDataV2, VoteElectionRequest, VoteData};
 
 const MAX_NOTIFICATION_SIZE: u64 = 16 * 1024 * 1024;
 const MAX_KNOWN_NOTIFICATIONS: usize = 10240; // ~300kb per peer + overhead.
@@ -162,12 +163,12 @@ impl<B: BlockT> ProducerSelectHandlerController<B>{
 
 	pub fn handle_request(&self, request: VoteElectionRequest<B>){
 		match request{
-			VoteElectionRequest::SendVote(vote_data, peer_vec)=>{
-				log::info!("vote_data: {:?}", vote_data);
-				for (i, p) in peer_vec.iter().enumerate(){
-					log::info!("{}: {:?}", i, p);
-				}
-			},
+			// VoteElectionRequest::SendVote(vote_data, peer_vec)=>{
+			// 	log::info!("vote_data: {:?}", vote_data);
+			// 	for (i, p) in peer_vec.iter().enumerate(){
+			// 		log::info!("{}: {:?}", i, p);
+			// 	}
+			// },
 			VoteElectionRequest::PropagateVote(vote_data) => {
 				// log::info!("propaget_vote: {:?}", vote_data);
 				let _ = self.to_handler.unbounded_send(ToHandler::PropagateVote(vote_data));
@@ -189,18 +190,19 @@ impl<B: BlockT> ProducerSelectHandlerController<B>{
 	// }
 }
 
+#[derive(Debug)]
 enum ToHandler<B: BlockT> {
 	PropagateNumber(u64, mpsc::UnboundedSender<u64>),
 	PropagateRandom(u64, NumberFor<B>),
 	SendVote(VoteData<B>, mpsc::UnboundedSender<Option<usize>>),
 
 	PrepareVote(NumberFor<B>, Duration),
-	PropagateVote(VoteData<B>),
 	SendElectionResult,
-	BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
+	BuildVoteStream(mpsc::UnboundedSender<VoteDataV2<B>>),
 	// ConfigVoteRound(NumberFor<B>),
 
 	// Request(VoteElectionRequest<B>),
+	PropagateVote(VoteDataV2<B>),
 }
 
 /// Handler for transactions. Call [`TransactionsHandler::run`] to start the processing.
@@ -226,7 +228,8 @@ pub struct ProducerSelectHandler<B: BlockT + 'static, H: ExHashT> {
 	// vote_open_duration: Duration,
 	vote_recv_config: Option<VoteRecvConfig<B>>,
 	pending_response: Option<mpsc::UnboundedSender<Option<usize>>>,
-	vote_notification_tx: Option<mpsc::UnboundedSender<(VoteData<B>, PeerId)>>,
+	// vote_notification_tx: Option<mpsc::UnboundedSender<(VoteData<B>, PeerId)>>,
+	vote_notification_tx: Option<mpsc::UnboundedSender<VoteDataV2<B>>>,
 
 	/// 
 	local_event_tx: mpsc::UnboundedSender<Event>,
@@ -242,7 +245,11 @@ struct VoteRecvConfig<B: BlockT>{
 
 #[derive(Encode, Decode, Debug)]
 enum VoteElectionNotification<B: BlockT>{
+	// #[indexed=1]
+	VoteV2(VoteDataV2<B>),
+	// #[indexed=2]
 	Vote(VoteData<B>),
+	// #[indexed=3]
 	Election(Vec<(Vec<u8>, u64)>),
 }
 
@@ -286,7 +293,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 						},
 						ToHandler::SendVote(vote_data, pending_response) => {
 							self.pending_response = Some(pending_response);
-							self.propagate_vote(vote_data);
+							self.propagate_vote_v1(vote_data);
 						},
 						ToHandler::SendElectionResult=>{
 							self.send_election_result().await;
@@ -368,11 +375,19 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 
 					if let Ok(msg) = <VoteElectionNotification<B> as Decode>::decode(&mut message.as_ref()){
 						match msg {
-							VoteElectionNotification::Vote(vote_data) => {
+							VoteElectionNotification::VoteV2(vote_data)=>{
+								log::info!("<<<< vote_v2: {:?} from: {:?}", vote_data, remote);
 								self.vote_notification_tx.as_ref().map(|v|{
-									log::info!("<<<< vote: {:?} from: {:?}", vote_data, remote);
-									let _ = v.unbounded_send((vote_data.clone(), remote));
+									// let _ = v.unbounded_send((vote_data.clone(), remote));
+									let _ = v.unbounded_send(vote_data);
 								});
+							},
+							VoteElectionNotification::Vote(_) => {
+								log::info!("<<< notification vote v1");
+								// self.vote_notification_tx.as_ref().map(|v|{
+								// 	log::info!("<<<< vote: {:?} from: {:?}", vote_data, remote);
+								// 	let _ = v.unbounded_send((vote_data.clone(), remote));
+								// });
 
 								// let _ = self.vote_notification_tx.unbounded_send(vote_data.clone());
 
@@ -485,7 +500,62 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 		}
 	}
 
-	fn propagate_vote(&mut self, vote_data: VoteData<B>){
+	fn propagate_vote(&mut self, vote_data: VoteDataV2<B>){
+		// log::info!("{:?}", vote_data);
+		let mut propagated_numbers = 0;
+
+		// let to_send = vote_data.encode();
+		let to_send = VoteElectionNotification::VoteV2(vote_data).encode();
+
+		// match <VoteElectionNotification<B> as Decode>::decode(&mut to_send.as_ref()){
+		// 	Ok(msg)=>{
+		// 		match msg{
+		// 			VoteElectionNotification::VoteV2(vote_data)=>{
+		// 				log::info!("VoteData: v2");
+		// 			},
+		// 			VoteElectionNotification::Vote(vote_data)=>{
+		// 				log::info!("VoteData: v1");
+		// 			},
+		// 			VoteElectionNotification::Election(_)=>{
+		// 				log::info!("election");
+		// 			}
+		// 		}
+		// 	},
+		// 	Err(e)=>{
+		// 		log::info!("decode error");
+		// 	},
+		// }
+
+		for (who, peer) in self.peers.iter_mut() {
+			// if matches!(peer.role, ObservedRole::)) {
+			// 	continue;
+			// }
+
+			propagated_numbers += 1;
+
+			log::info!(">>>> {:?}, client/network/src/producer_select.rs:514", who);
+			self.service.write_notification(
+				who.clone(),
+				self.protocol_name.clone(),
+				to_send.clone(),
+			);
+		}
+
+		log::info!(">>>> to local_peer_id: client/network/src/producer_select.rs:522");
+		let local_peer_id = self.service.local_peer_id();
+		let _ = self.local_event_tx.unbounded_send(
+			Event::NotificationsReceived{
+				remote: local_peer_id.clone(), 
+				messages: vec![(self.protocol_name.clone(), Bytes::from(to_send.clone()))],
+			}
+		);
+
+		if let Some(ref metriecs) = self.metrics {
+			metriecs.propagated_numbers.inc_by(propagated_numbers as _)
+		}
+	}
+
+	fn propagate_vote_v1(&mut self, vote_data: VoteData<B>){
 		let VoteData{ vote_num, .. } = vote_data;
 
 		// propagate vote_data to authority

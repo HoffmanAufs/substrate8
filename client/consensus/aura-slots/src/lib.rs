@@ -46,7 +46,7 @@ use sc_telemetry::{telemetry, TelemetryHandle, CONSENSUS_DEBUG, CONSENSUS_INFO, 
 use sp_api::{ApiRef, ProvideRuntimeApi};
 use sp_arithmetic::traits::BaseArithmetic;
 use sp_consensus::{CanAuthorWith, Proposer, SelectChain, SlotData, SyncOracle,
-	VoteData, VoteElectionRequest};
+	VoteElectionRequest};
 use sp_consensus_slots::Slot;
 use sp_inherents::{CreateInherentDataProviders, InherentDataProvider};
 use sp_runtime::{
@@ -661,8 +661,17 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 			AuthorState::WaitProposal=>{
 				log::info!("AuthorState::WaitProposal");
 
+				let chain_head = match select_chain.best_chain().await{
+					Ok(x)=>x,
+					Err(e)=>{
+						log::info!("select_chain err: {}", e);
+						state = AuthorState::WaitStart;
+						continue;
+					}
+				};
+
 				// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
-				// worker.propagate_vote(select_chain);
+				worker.propagate_vote(&chain_head);
 
 				let full_timeout_duration = Duration::from_secs(15*3);
 				let start_time = SystemTime::now();
@@ -885,10 +894,10 @@ pub async fn aura_slot_worker_4<B, C, S, W, T, SO, CIDP, CAW>(
 		futures::select!{
 			_ = Delay::new(Duration::new(1,0)).fuse()=>{
 				// log::info!(">>>> tick: send_vote");
-				let vote_data = VoteData::new(i, sync_id.clone());
+				// let vote_data = VoteData::new(i, sync_id.clone());
 				// let (tx, _) = mpsc::unbounded();
 				// sync_oracle.send_vote(vote_data, tx);
-				sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
+				// sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
 				i += 1;
 			},
 			recv_data = vote_rx.next()=>{

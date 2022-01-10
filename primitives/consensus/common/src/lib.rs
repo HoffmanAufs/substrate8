@@ -227,7 +227,7 @@ pub trait Proposer<B: BlockT> {
 ///
 /// Generally, consensus authoring work isn't undertaken while well behind
 /// the head of the chain.
-pub trait SyncOracle<B: BlockT> {
+pub trait SyncOracle<B:BlockT> {
 	/// Whether the synchronization service is undergoing major sync.
 	/// Returns true if so.
 	fn is_major_syncing(&mut self) -> bool;
@@ -247,7 +247,7 @@ pub trait SyncOracle<B: BlockT> {
 #[derive(Clone, Copy, Debug)]
 pub struct NoNetwork;
 
-impl<B: BlockT> SyncOracle<B> for NoNetwork {
+impl<B:BlockT> SyncOracle<B> for NoNetwork {
 	fn is_major_syncing(&mut self) -> bool {
 		false
 	}	
@@ -373,13 +373,13 @@ pub trait SlotData {
 #[derive(Debug)]
 pub enum VoteElectionRequest<B: BlockT>{
 	// ConfigNewVoteRound(NumberFor<B>),
-	BuildVoteStream(mpsc::UnboundedSender<(VoteData<B>, PeerId)>),
+	BuildVoteStream(mpsc::UnboundedSender<(VoteDataV2<B>, PeerId)>),
 	BuildElectionStream(mpsc::UnboundedSender<Vec<(PeerId, u64)>>),
-	SendVote(VoteData<B>, Vec<PeerId>),
+	SendVote(VoteDataV2<B>),
 	// SendElectionResult(Vec<PeerId>),
 
 	// test usage
-	PropagateVote(VoteData<B>),
+	PropagateVote(VoteDataV2<B>),
 	ReturnElectionResult,
 }
 
@@ -394,6 +394,37 @@ impl<B: BlockT> VoteData<B>{
 		Self{
 			vote_num,
 			sync_id,
+		}
+	}
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct VoteDataV2<B>
+where 
+	B: BlockT,
+	// P::Public: Public + Encode + Decode,
+{
+	pub hash: B::Hash,
+	pub sig_bytes: Vec<u8>,
+	pub pub_bytes: Vec<u8>,
+	// pub author: <P as Pair>::Public,
+	// pub hash: B::Hash,
+	// pub sig_data: [u8;64],
+	// pub pub_data: [u8;32],
+}
+
+impl<B> VoteDataV2<B>
+where
+	B: BlockT,
+{
+	pub fn new(sig_bytes: Vec<u8>, hash: B::Hash, pub_bytes: Vec<u8>)->Self{
+		Self{
+			hash,
+			sig_bytes,
+			pub_bytes,
+			// hash: hash,
+			// sig_data: sig_bytes.as_slice(),
+			// pub_data: pub_bytes.as_slice(),
 		}
 	}
 }

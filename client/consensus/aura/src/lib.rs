@@ -73,7 +73,7 @@ use sp_application_crypto::{AppKey, AppPublic};
 use sp_blockchain::{HeaderBackend, ProvideCache, Result as CResult};
 use sp_consensus::{
 	BlockOrigin, CanAuthorWith, Environment, Error as ConsensusError, Proposer, SelectChain,
-	VoteData, VoteElectionRequest,
+	VoteData, VoteElectionRequest, VoteDataV2,
 };
 use sp_consensus_slots::Slot;
 use sp_core::crypto::{Pair, Public, CryptoTypePublicPair};
@@ -576,7 +576,7 @@ where
 
 	fn claim_slot(
 		&mut self,
-		header: &B::Header,
+		_header: &B::Header,
 		slot: Slot,
 		epoch_data: &Self::EpochData,
 	) -> Option<Self::Claim> {
@@ -586,39 +586,46 @@ where
 		let fixed_index = 0;
 		let authors = epoch_data;
 		let expect_author = authors.get(fixed_index)?;
+		log::info!("{:?}", expect_author);
 
 		// let _key_type = <AuthorityId<P> as AppKey>::ID;
 
-		let _public_type_pair = expect_author.clone().to_public_crypto_pair();
-		if let Ok(keys) = SyncCryptoStore::keys(&*self.keystore, sp_application_crypto::key_types::AURA){
-			for CryptoTypePublicPair(crypto_type, public) in keys.iter(){
-				log::info!("{:?}, {:?}", crypto_type, public);
-			}
-		}
+		// let _public_type_pair = expect_author.clone().to_public_crypto_pair();
+		// if let Ok(keys) = SyncCryptoStore::keys(&*self.keystore, sp_application_crypto::key_types::AURA){
+		// 	for CryptoTypePublicPair(crypto_type, public) in keys.iter(){
+		// 		log::info!("{:?}, {:?}", crypto_type, public);
+		// 	}
+		// }
 
-		let sr25519_public_keys = SyncCryptoStore::sr25519_public_keys(&*self.keystore, sp_application_crypto::key_types::AURA);
-		if sr25519_public_keys.len() == 1{
-			let public_type_pair = sr25519_public_keys[0].to_public_crypto_pair();
+		// let sr25519_public_keys = SyncCryptoStore::sr25519_public_keys(&*self.keystore, sp_application_crypto::key_types::AURA);
+		// if sr25519_public_keys.len() == 1{
+		// 	let public_type_pair = sr25519_public_keys[0].to_public_crypto_pair();
 
-			let vote_num = {
-				let mut rng = rand::thread_rng();
-				rng.gen::<u64>() & 0xFFFFu64
-			};
-			let msg = vote_num.encode();
+		// 	let vote_num = {
+		// 		let mut rng = rand::thread_rng();
+		// 		rng.gen::<u64>() & 0xFFFFu64
+		// 	};
+		// 	let msg = vote_num.encode();
 
-			if let Ok(Some(sig)) = SyncCryptoStore::sign_with(
-				&*self.keystore,
-				<AuthorityId<P> as AppKey>::ID,
-				&public_type_pair,
-				&msg,
-			){
-				log::info!("random:{:?}, sign: {:?}", vote_num, sig);
+		// 	if let Ok(Some(sig_bytes)) = SyncCryptoStore::sign_with(
+		// 		&*self.keystore,
+		// 		<AuthorityId<P> as AppKey>::ID,
+		// 		&public_type_pair,
+		// 		&msg,
+		// 	){
+		// 		log::info!("random:{:?}, sign: {:?}", vote_num, sig_bytes);
 
-				// let sign_ret = P::verify(sig, &msg, &sr25519_public_keys[0]);
-				// log::info!("{:?}", sign_ret);
-			}
+		// 		let verify_public = <AuthorityId<P> as Decode>::decode(&mut sr25519_public_keys[0].to_raw_vec().as_slice()).unwrap();
 
-		}
+		// 		if let Ok(sig) = <P::Signature as Decode>::decode(&mut sig_bytes.as_slice()){
+		// 			log::info!("{:?}, {:?}", sig);
+		// 			let sign_ret = P::verify(&sig, &msg, &verify_public);
+		// 			log::info!("sigin_ret: {:?}", sign_ret);
+		// 		}
+		// 		// log::info!("{:?}", sign_ret);
+		// 	}
+
+		// }
 
 		// for key in sr25519_public_keys.iter(){
 		// 	log::info!("sr25519: {:?}", key);
@@ -799,14 +806,62 @@ where
 		}
 	}
 
+	// fn propagate_vote(&mut self){
 	fn propagate_vote(&mut self, header: &B::Header){
-		let vote_num = {
-			let mut rng = rand::thread_rng();
-			rng.gen::<u64>() & 0xFFFFu64
-		};
-		let &sync_id = header.number();
-		let vote_data = <VoteData<B>>::new(vote_num, sync_id);
-		self.sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
+		let sr25519_public_keys = SyncCryptoStore::sr25519_public_keys(
+			&*self.keystore, 
+			sp_application_crypto::key_types::AURA
+		);
+
+		if sr25519_public_keys.len() == 1{
+			// let verify_public = <AuthorityId<P> as Decode>::decode(&mut sr25519_public_keys[0].to_raw_vec().as_slice()).unwrap();
+			let public_type_pair = sr25519_public_keys[0].to_public_crypto_pair();
+
+			// let vote_num = {
+			// 	let mut rng = rand::thread_rng();
+			// 	rng.gen::<u64>() & 0xFFFFu64
+			// };
+			// let msg = vote_num.encode();
+			let msg = header.hash().encode();
+
+			if let Ok(Some(sig_bytes)) = SyncCryptoStore::sign_with(
+				&*self.keystore,
+				<AuthorityId<P> as AppKey>::ID,
+				&public_type_pair,
+				&msg,
+			){
+				// let vote_data = VoteDataV2::<B, P>::{
+				// 	sig_bytes,
+				// 	hash: header.hash(),
+				// 	author: sr25519_public_keys[0].clone(),
+				// 	// header.hash(),
+				// };
+				let pub_bytes = sr25519_public_keys[0].to_raw_vec();
+				let vote_data = <VoteDataV2<B>>::new(sig_bytes, header.hash(), pub_bytes);
+				self.sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
+				// let author_public = <AuthorityId<P> as Decode>::decode(&mut sr25519_public_keys[0].to_raw_vec().as_slice()).unwrap();
+				// if let Ok(sig) = <P::Signature as Decode>::decode(&mut sig_bytes.as_slice()){
+				// 	let vote_data = <VoteDataV2<B,P>>::new(sig, header.hash(), author_public);
+				// }
+				// let vote_data = VoteData{};
+				// self.sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
+				// log::info!("random:{:?}, sign: {:?}", vote_num, sig_bytes);
+
+				// let verify_public = <AuthorityId<P> as Decode>::decode(&mut sr25519_public_keys[0].to_raw_vec().as_slice()).unwrap();
+
+				// 	log::info!("{:?}, {:?}", vote_num, sig);
+				// 	let sign_ret = P::verify(&sig, &msg, &verify_public);
+				// 	log::info!("sigin_ret: {:?}", sign_ret);
+				// }
+			}
+		}
+		// let vote_num = {
+		// 	let mut rng = rand::thread_rng();
+		// 	rng.gen::<u64>() & 0xFFFFu64
+		// };
+		// let &sync_id = header.number();
+		// let vote_data = <VoteData<B>>::new(vote_num, sync_id);
+		// self.sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
 		// log::info!("{:?}: {:?}", header.number(), header.hash());
 	}
 }
