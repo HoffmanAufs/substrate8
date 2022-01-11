@@ -372,25 +372,25 @@ pub trait SlotData {
 
 #[derive(Debug)]
 pub enum VoteElectionRequest<B: BlockT>{
+	SendVote(VoteDataV1<B>),
+	ReturnElectionResult,
 	// ConfigNewVoteRound(NumberFor<B>),
-	BuildVoteStream(mpsc::UnboundedSender<VoteDataV2<B>>),
+	BuildVoteStream(mpsc::UnboundedSender<VoteData<B>>),
 	BuildElectionStream(mpsc::UnboundedSender<ElectionData<B>>),
-	SendVote(VoteDataV2<B>),
 	// SendElectionResult(Vec<PeerId>),
 
 	// test usage
-	PropagateVote(VoteDataV2<B>),
+	PropagateVote(VoteData<B>),
 	PropagateElection(ElectionData<B>),
-	ReturnElectionResult,
 }
 
 #[derive(Debug, Encode, Decode, Clone)]
-pub struct VoteData<B: BlockT>{
+pub struct VoteDataV1<B: BlockT>{
 	pub vote_num: u64,
 	pub sync_id: NumberFor<B>,
 }
 
-impl<B: BlockT> VoteData<B>{
+impl<B: BlockT> VoteDataV1<B>{
 	pub fn new(vote_num: u64, sync_id: NumberFor<B>)->Self{
 		Self{
 			vote_num,
@@ -400,17 +400,16 @@ impl<B: BlockT> VoteData<B>{
 }
 
 #[derive(Debug, Encode, Decode)]
-pub struct VoteDataV2<B>
+pub struct VoteData<B>
 where 
 	B: BlockT,
-	// P::Public: Public + Encode + Decode,
 {
 	pub hash: B::Hash,
 	pub sig_bytes: Vec<u8>,
 	pub pub_bytes: Vec<u8>,
 }
 
-impl<B> VoteDataV2<B>
+impl<B> VoteData<B>
 where
 	B: BlockT,
 {
@@ -419,9 +418,6 @@ where
 			hash,
 			sig_bytes,
 			pub_bytes,
-			// hash: hash,
-			// sig_data: sig_bytes.as_slice(),
-			// pub_data: pub_bytes.as_slice(),
 		}
 	}
 }

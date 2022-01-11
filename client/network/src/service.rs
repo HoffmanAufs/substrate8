@@ -51,7 +51,7 @@ use crate::{
 };
 
 use codec::Encode as _;
-use futures::{channel::{oneshot, mpsc}, prelude::*};
+use futures::{channel::oneshot, prelude::*};
 use libp2p::{
 	core::{
 		connection::{ConnectionError, ConnectionLimits, PendingConnectionError},
@@ -71,7 +71,7 @@ use log::{debug, error, info, trace, warn};
 use metrics::{Histogram, HistogramVec, MetricSources, Metrics};
 use parking_lot::Mutex;
 use sc_consensus::{BlockImportError, BlockImportStatus, ImportQueue, Link};
-use sp_consensus::{VoteData, VoteDataV2, VoteElectionRequest};
+use sp_consensus::VoteElectionRequest;
 use sc_peerset::PeersetHandle;
 use sp_runtime::traits::{Block as BlockT, NumberFor};
 use sp_utils::mpsc::{tracing_unbounded, TracingUnboundedReceiver, TracingUnboundedSender};
@@ -90,7 +90,7 @@ use std::{
 		Arc,
 	},
 	task::Poll,
-	time::Duration,
+	// time::Duration,
 };
 
 pub use behaviour::{

@@ -73,7 +73,7 @@ use sp_application_crypto::{AppKey, AppPublic};
 use sp_blockchain::{HeaderBackend, ProvideCache, Result as CResult};
 use sp_consensus::{
 	BlockOrigin, CanAuthorWith, Environment, Error as ConsensusError, Proposer, SelectChain,
-	VoteData, VoteElectionRequest, VoteDataV2, ElectionData,
+	VoteData, VoteElectionRequest, VoteDataV1, ElectionData,
 };
 use sp_consensus_slots::Slot;
 use sp_core::crypto::{Pair, Public, CryptoTypePublicPair};
@@ -782,14 +782,14 @@ where
 				&msg,
 			){
 				let pub_bytes = sr25519_public_keys[0].to_raw_vec();
-				let vote_data = <VoteDataV2<B>>::new(sig_bytes, cur_hash.clone(), pub_bytes);
+				let vote_data = <VoteData<B>>::new(sig_bytes, cur_hash.clone(), pub_bytes);
 				self.sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
 			}
 		}
 	}
 
-	fn verify_vote(&mut self, vote_data: &VoteDataV2<B>)->bool{
-		let VoteDataV2{hash, sig_bytes, pub_bytes} = vote_data;
+	fn verify_vote(&mut self, vote_data: &VoteData<B>)->bool{
+		let VoteData{hash, sig_bytes, pub_bytes} = vote_data;
 		if let Ok(sig) = <P::Signature as Decode>::decode(&mut sig_bytes.as_slice()){
 			if let Ok(verify_public) = <AuthorityId<P> as Decode>::decode(&mut pub_bytes.as_slice()){
 				let msg = hash.encode();
