@@ -874,10 +874,15 @@ where
 	fn verify_election(&mut self, election_data: &ElectionData<B>, header: &B::Header)->bool{
 		// if pub_bytes not in committee
 		if let Ok(committee_vec) = authorities(self.client.as_ref(), &BlockId::Hash(header.hash())){
+			let mut is_committee = false;
 			for committee in committee_vec.iter(){
-				if election_data.pub_bytes != committee.to_raw_vec(){
-					return false;
+				if election_data.pub_bytes == committee.to_raw_vec(){
+					is_committee |= true; 
+					break;
 				}
+			}
+			if is_committee == false{
+				return false;
 			}
 		}
 		else{

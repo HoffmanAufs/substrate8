@@ -81,7 +81,7 @@ pub mod pallet {
 			if let Some(new_slot) = Self::current_slot_from_digests() {
 				let current_slot = CurrentSlot::<T>::get();
 
-				assert!(current_slot < new_slot, "Slot must increase");
+				// assert!(current_slot < new_slot, "Slot must increase");
 				CurrentSlot::<T>::put(new_slot);
 
 				// TODO [#3398] Generate offence report for all authorities that skipped their slots.

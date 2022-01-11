@@ -531,12 +531,12 @@ enum AuthorState{
 
 /// aura author worker
 pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
-	_slot_duration: SlotDuration<T>,
+	slot_duration: SlotDuration<T>,
 	client: Arc<C>,
 	select_chain: S,
 	mut worker: W,
 	mut sync_oracle: SO,
-	_create_inherent_data_providers: CIDP,
+	create_inherent_data_providers: CIDP,
 	_can_author_with: CAW,
 ) where
 	B: BlockT,
@@ -553,6 +553,9 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 	let (election_tx, mut election_rx) = mpsc::unbounded();
 	sync_oracle.ve_request(VoteElectionRequest::BuildElectionStream(election_tx));
 	let mut imported_blocks_stream = client.import_notification_stream().fuse();
+
+	let mut slots =
+		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain.clone());
 
 	let mut state = AuthorState::WaitStart;
 	loop{
@@ -655,11 +658,22 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 						},
 						_ = timeout.fuse()=>{
 							log::info!("{:?}", duration_percent);
-							// if duration_percent < 1.0{
-							// 	log::info!("proposal");
-							// 	// worker.proposal();
-							// 	//TODO: proposal
-							// }
+							if duration_percent < 1.0{
+								// let chain_head = match select_chain.best_chain().await{
+								// 	Ok(x)=>x,
+								// 	Err(e)=>{
+								// 		log::info!("chain_head err");
+								// 		state = AuthorState::WaitStart;
+								// 		break;
+								// 	}
+								// }
+								log::info!("proposal");
+								if let Ok(slot_info) = slots.default_slot().await{
+									let _ = worker.on_slot(slot_info).await;
+								}
+								// worker.proposal();
+								//TODO: proposal
+							}
 
 							state = AuthorState::WaitStart;
 							break;
@@ -1116,6 +1130,8 @@ pub async fn start_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 
 	let mut slots =
 		Slots::new(slot_duration.slot_duration(), create_inherent_data_providers, select_chain);
+	
+	let mut is_init = false;
 
 	loop {
 		let slot_info = match slots.next_slot().await {
@@ -1142,7 +1158,10 @@ pub async fn start_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 				err,
 			);
 		} else {
-			let _ = worker.on_slot(slot_info).await;
+			if is_init==false{
+				let _ = worker.on_slot(slot_info).await;
+				is_init = true;
+			}
 		}
 	}
 }
