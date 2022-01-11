@@ -192,7 +192,7 @@ where
 	}
 
 	pub async fn default_slot(&mut self)-> Result<SlotInfo<Block>, Error>{
-		let ends_in = time_until_next_slot(self.slot_duration);
+		// let ends_in = time_until_next_slot(self.slot_duration);
 		// let ends_at = Instant::now() + ends_in;
 
 		let chain_head = self.client.best_chain().await?;

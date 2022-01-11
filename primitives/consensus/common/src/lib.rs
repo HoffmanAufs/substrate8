@@ -31,7 +31,7 @@ use sp_runtime::{
 use sp_state_machine::StorageProof;
 use codec::{Encode, Decode};
 use libp2p::PeerId;
-use sp_consensus_slots::Slot;
+// use sp_consensus_slots::Slot;
 
 pub mod block_validation;
 pub mod error;

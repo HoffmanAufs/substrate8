@@ -79,7 +79,7 @@ pub mod pallet {
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(_: T::BlockNumber) -> Weight {
 			if let Some(new_slot) = Self::current_slot_from_digests() {
-				let current_slot = CurrentSlot::<T>::get();
+				// let current_slot = CurrentSlot::<T>::get();
 
 				// assert!(current_slot < new_slot, "Slot must increase");
 				CurrentSlot::<T>::put(new_slot);

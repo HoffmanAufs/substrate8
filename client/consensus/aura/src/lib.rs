@@ -582,81 +582,35 @@ where
 		slot: Slot,
 		epoch_data: &Self::EpochData,
 	) -> Option<Self::Claim> {
-		// let block_hash = header.number();
-		// log::info!("{:?}", block_hash);
+		// let fixed_index = 0;
+		// let authors = epoch_data;
+		// let expect_author = authors.get(fixed_index)?;
+		// // log::info!("claim slot: {:?}", expect_author);
 
-		let fixed_index = 0;
-		let authors = epoch_data;
-		let expect_author = authors.get(fixed_index)?;
-		log::info!("{:?}", expect_author);
 
-		// let _key_type = <AuthorityId<P> as AppKey>::ID;
-
-		// let _public_type_pair = expect_author.clone().to_public_crypto_pair();
-		// if let Ok(keys) = SyncCryptoStore::keys(&*self.keystore, sp_application_crypto::key_types::AURA){
-		// 	for CryptoTypePublicPair(crypto_type, public) in keys.iter(){
-		// 		log::info!("{:?}, {:?}", crypto_type, public);
-		// 	}
+		// if SyncCryptoStore::has_keys(
+		// 	&*self.keystore,
+		// 	&[(expect_author.to_raw_vec(), sp_application_crypto::key_types::AURA)],
+		// ){
+		// 	// let pre_digest = PreDigest{authority_index: fixed_index.into(), slot: slot};
+		// 	let pre_digest = PreDigest{authority_index: fixed_index as u32, slot: slot};
+		// 	return Some((pre_digest, expect_author.clone()));
 		// }
-
-		// let sr25519_public_keys = SyncCryptoStore::sr25519_public_keys(&*self.keystore, sp_application_crypto::key_types::AURA);
-		// if sr25519_public_keys.len() == 1{
-		// 	let public_type_pair = sr25519_public_keys[0].to_public_crypto_pair();
-
-		// 	let vote_num = {
-		// 		let mut rng = rand::thread_rng();
-		// 		rng.gen::<u64>() & 0xFFFFu64
-		// 	};
-		// 	let msg = vote_num.encode();
-
-		// 	if let Ok(Some(sig_bytes)) = SyncCryptoStore::sign_with(
-		// 		&*self.keystore,
-		// 		<AuthorityId<P> as AppKey>::ID,
-		// 		&public_type_pair,
-		// 		&msg,
-		// 	){
-		// 		log::info!("random:{:?}, sign: {:?}", vote_num, sig_bytes);
-
-		// 		let verify_public = <AuthorityId<P> as Decode>::decode(&mut sr25519_public_keys[0].to_raw_vec().as_slice()).unwrap();
-
-		// 		if let Ok(sig) = <P::Signature as Decode>::decode(&mut sig_bytes.as_slice()){
-		// 			log::info!("{:?}, {:?}", sig);
-		// 			let sign_ret = P::verify(&sig, &msg, &verify_public);
-		// 			log::info!("sigin_ret: {:?}", sign_ret);
-		// 		}
-		// 		// log::info!("{:?}", sign_ret);
-		// 	}
-
+		// else{
+		// 	return None;
 		// }
+		let authorities = epoch_data;
 
-		// for key in sr25519_public_keys.iter(){
-		// 	log::info!("sr25519: {:?}", key);
-		// }
-
-		// let expect_author = slot_author(slot, epoch_data);
-
-		if SyncCryptoStore::has_keys(
-			&*self.keystore,
-			&[(expect_author.to_raw_vec(), sp_application_crypto::key_types::AURA)],
-		){
-			// let pre_digest = PreDigest{authority_index: fixed_index.into(), slot: slot};
-			let pre_digest = PreDigest{authority_index: fixed_index as u32, slot: slot};
-			return Some((pre_digest, expect_author.clone()));
+		for (idx, author) in authorities.iter().enumerate(){
+			if SyncCryptoStore::has_keys(
+				&*self.keystore,
+				&[(author.to_raw_vec(), sp_application_crypto::key_types::AURA)],
+			){
+				let pre_digest = PreDigest{authority_index: idx as u32 , slot: slot};
+				return Some((pre_digest, author.clone()));
+			}
 		}
-		else{
-			return None;
-		}
-
-		// for (idx, author) in authoritis.iter().enumerate(){
-		// 	if SyncCryptoStore::has_keys(
-		// 		&*self.keystore,
-		// 		&[(author.to_raw_vec(), sp_application_crypto::key_types::AURA)],
-		// 	){
-		// 		let pre_digest = PreDigest{authority_index: idx as u32 , slot: slot};
-		// 		return Some((pre_digest, author.clone()));
-		// 	}
-		// }
-		// None
+		None
 	}
 
 	// add by user
@@ -779,37 +733,37 @@ where
 		)
 	}
 
-	fn author_send_vote(&mut self, header: &B::Header){
-		if let Ok(committee) = authorities(self.client.as_ref(), &BlockId::Hash(header.hash())){
-			// let mut peer_vec: Vec<PeerId> = vec![];
-			// for (i, member) in committee.iter().enumerate(){
-			// 	log::info!("{}: {:?}", i, member);
+	// fn author_send_vote(&mut self, header: &B::Header){
+	// 	if let Ok(committee) = authorities(self.client.as_ref(), &BlockId::Hash(header.hash())){
+	// 		// let mut peer_vec: Vec<PeerId> = vec![];
+	// 		// for (i, member) in committee.iter().enumerate(){
+	// 		// 	log::info!("{}: {:?}", i, member);
 
-			// 	// match PeerId::from_bytes(member.as_slice()){
-			// 	// 	Ok(peer)=>{ peer_vec.push(peer);},
-			// 	// 	Err(e)=>{log::info!("convert err:{}", e);}
-			// 	// }
+	// 		// 	// match PeerId::from_bytes(member.as_slice()){
+	// 		// 	// 	Ok(peer)=>{ peer_vec.push(peer);},
+	// 		// 	// 	Err(e)=>{log::info!("convert err:{}", e);}
+	// 		// 	// }
 
-			// 	// peer_vec.push(member.into());
-			// 	// log::info!("{}: {:?}", i, member);
-			// 	// if let Ok(peer) = PeerId::from_bytes(member.clone().to_raw_vec().as_slice()){
-			// 	// 	peer_vec.push(peer);
-			// 	// };
-			// }
+	// 		// 	// peer_vec.push(member.into());
+	// 		// 	// log::info!("{}: {:?}", i, member);
+	// 		// 	// if let Ok(peer) = PeerId::from_bytes(member.clone().to_raw_vec().as_slice()){
+	// 		// 	// 	peer_vec.push(peer);
+	// 		// 	// };
+	// 		// }
 
-			// let vote_num = {
-			// 	let mut rng = rand::thread_rng();
-			// 	rng.gen::<u64>() & 0xFFFFu64
-			// };
-			// let &sync_id = header.number();
-			// let vote_data = <VoteData<B>>::new(vote_num, sync_id);
-			// self.sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data, peer_vec));
-			// self.sync_oracle.ve_request()
-		}
-	}
+	// 		// let vote_num = {
+	// 		// 	let mut rng = rand::thread_rng();
+	// 		// 	rng.gen::<u64>() & 0xFFFFu64
+	// 		// };
+	// 		// let &sync_id = header.number();
+	// 		// let vote_data = <VoteData<B>>::new(vote_num, sync_id);
+	// 		// self.sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data, peer_vec));
+	// 		// self.sync_oracle.ve_request()
+	// 	}
+	// }
 
 	// fn propagate_vote(&mut self){
-	fn propagate_vote(&mut self, header: &B::Header){
+	fn propagate_vote(&mut self, cur_hash: &B::Hash){
 		let sr25519_public_keys = SyncCryptoStore::sr25519_public_keys(
 			&*self.keystore, 
 			sp_application_crypto::key_types::AURA
@@ -819,12 +773,7 @@ where
 			// let verify_public = <AuthorityId<P> as Decode>::decode(&mut sr25519_public_keys[0].to_raw_vec().as_slice()).unwrap();
 			let public_type_pair = sr25519_public_keys[0].to_public_crypto_pair();
 
-			// let vote_num = {
-			// 	let mut rng = rand::thread_rng();
-			// 	rng.gen::<u64>() & 0xFFFFu64
-			// };
-			// let msg = vote_num.encode();
-			let msg = header.hash().encode();
+			let msg = cur_hash.clone().encode();
 
 			if let Ok(Some(sig_bytes)) = SyncCryptoStore::sign_with(
 				&*self.keystore,
@@ -832,29 +781,9 @@ where
 				&public_type_pair,
 				&msg,
 			){
-				// let vote_data = VoteDataV2::<B, P>::{
-				// 	sig_bytes,
-				// 	hash: header.hash(),
-				// 	author: sr25519_public_keys[0].clone(),
-				// 	// header.hash(),
-				// };
 				let pub_bytes = sr25519_public_keys[0].to_raw_vec();
-				let vote_data = <VoteDataV2<B>>::new(sig_bytes, header.hash(), pub_bytes);
+				let vote_data = <VoteDataV2<B>>::new(sig_bytes, cur_hash.clone(), pub_bytes);
 				self.sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
-				// let author_public = <AuthorityId<P> as Decode>::decode(&mut sr25519_public_keys[0].to_raw_vec().as_slice()).unwrap();
-				// if let Ok(sig) = <P::Signature as Decode>::decode(&mut sig_bytes.as_slice()){
-				// 	let vote_data = <VoteDataV2<B,P>>::new(sig, header.hash(), author_public);
-				// }
-				// let vote_data = VoteData{};
-				// self.sync_oracle.ve_request(VoteElectionRequest::PropagateVote(vote_data));
-				// log::info!("random:{:?}, sign: {:?}", vote_num, sig_bytes);
-
-				// let verify_public = <AuthorityId<P> as Decode>::decode(&mut sr25519_public_keys[0].to_raw_vec().as_slice()).unwrap();
-
-				// 	log::info!("{:?}, {:?}", vote_num, sig);
-				// 	let sign_ret = P::verify(&sig, &msg, &verify_public);
-				// 	log::info!("sigin_ret: {:?}", sign_ret);
-				// }
 			}
 		}
 	}
@@ -864,16 +793,31 @@ where
 		if let Ok(sig) = <P::Signature as Decode>::decode(&mut sig_bytes.as_slice()){
 			if let Ok(verify_public) = <AuthorityId<P> as Decode>::decode(&mut pub_bytes.as_slice()){
 				let msg = hash.encode();
+
 				let sign_ret = P::verify(&sig, &msg, &verify_public);
 				return sign_ret;
 			}
+			else{
+				log::info!("verfiy_vote() failed, decode public_key failed()");
+				return false;
+			}
 		}
-		false
+		else{
+			log::info!("verify_vote() failed, decode vote error");
+			return false;
+		}
 	}
 
-	fn verify_election(&mut self, election_data: &ElectionData<B>, header: &B::Header)->bool{
+	fn verify_election(&mut self, election_data: &ElectionData<B>, &cur_hash: &B::Hash)->bool{
+		// hash_verify
+		// let cur_hash = header.hash();
+		if cur_hash != election_data.hash{
+			log::info!("verify_election() failed, hash not eq, cur: {}, recv: {}", cur_hash, election_data.hash);
+			return false;
+		}
+
 		// if pub_bytes not in committee
-		if let Ok(committee_vec) = authorities(self.client.as_ref(), &BlockId::Hash(header.hash())){
+		if let Ok(committee_vec) = authorities(self.client.as_ref(), &BlockId::Hash(cur_hash)){
 			let mut is_committee = false;
 			for committee in committee_vec.iter(){
 				if election_data.pub_bytes == committee.to_raw_vec(){
@@ -882,10 +826,12 @@ where
 				}
 			}
 			if is_committee == false{
+				log::info!("verify_election() failed, not committee member");
 				return false;
 			}
 		}
 		else{
+			log::info!("verify_election() failed, get committee member failed");
 			return false;
 		}
 
@@ -938,16 +884,16 @@ where
 		}
 	}
 
-	fn update_timeout_duration(&mut self, header: &B::Header, election_vec: &Vec<Vec<Vec<u8>>>)->f32{
+	fn update_timeout_duration(&mut self, cur_hash: &B::Hash, election_vec: &Vec<Vec<Vec<u8>>>)->f32{
 		let sr25519_public_keys = SyncCryptoStore::sr25519_public_keys(
 			&*self.keystore, 
 			sp_application_crypto::key_types::AURA
 		);
 
 		if sr25519_public_keys.len() == 1{
-			let pub_bytes = sr25519_public_keys[0].to_raw_vec();
+			// let pub_bytes = sr25519_public_keys[0].to_raw_vec();
 
-			if let Ok(committee) = authorities(self.client.as_ref(), &BlockId::Hash(header.hash())){
+			if let Ok(committee) = authorities(self.client.as_ref(), &BlockId::Hash(cur_hash.clone())){
 				let pub_bytes = sr25519_public_keys[0].to_raw_vec();
 				let committee_count = committee.len();
 				let (min_value, max_value) = caculate_min_max_value(committee_count, MAX_VOTE_RANK);
@@ -967,17 +913,20 @@ where
 				}
 
 				rank_vec.sort();
-				log::info!("rand_vec: {:?}, {}", rank_vec, header.hash());
-				let cur_value = caculate_cur_value(rank_vec, MAX_VOTE_RANK);
+				let cur_value = caculate_cur_value(&rank_vec, MAX_VOTE_RANK);
 
-				if cur_value < min_value{
-					return 0f32;
-				}
-				else{
-					let full_distance = (max_value - min_value) as f32;
-					let cur_distance = (cur_value - min_value) as f32;
-					return cur_distance/full_distance;
-				}
+				let result = {
+					if cur_value < min_value{
+						0f32
+					}
+					else{
+						let full_distance = (max_value - min_value) as f32;
+						let cur_distance = (cur_value - min_value) as f32;
+						cur_distance/full_distance
+					}
+				};
+				log::info!("Author: update_duration: {}, rand_vec: {:?}, {}", result, rank_vec, cur_hash);
+				return result;
 			}
 		}
 
@@ -987,7 +936,7 @@ where
 	// fn recv_election(&mut self, )
 }
 
-fn caculate_cur_value(rank_vec: Vec<usize>, max_vote_rank: usize)->u64{
+fn caculate_cur_value(rank_vec: &Vec<usize>, max_vote_rank: usize)->u64{
 	let mut ret = 0;
 	let mut base = 1;
 

@@ -8,7 +8,6 @@ use crate::{
 	Event, ExHashT, ObservedRole,
 };
 
-use sp_core::Pair;
 use codec::{Encode, Decode};
 use bytes::Bytes;
 use futures::{channel::mpsc, prelude::*};
@@ -24,7 +23,7 @@ use std::{
 	sync::{
 		Arc,
 	},
-	time::{Duration, SystemTime},
+	// time::{Duration, SystemTime},
 };
 
 use sp_consensus::{VoteDataV2, VoteElectionRequest, VoteData, ElectionData};
@@ -110,9 +109,9 @@ impl ProducerSelectHandlerPrototype {
 			} else {
 				None
 			},
-			vote_map: BTreeMap::new(),
-			vote_recv_config: None,
-			pending_response: None,
+			// vote_map: BTreeMap::new(),
+			// vote_recv_config: None,
+			// pending_response: None,
 			vote_notification_tx: None,
 			election_notification_tx: None,
 			local_event_tx: local_event_tx,
@@ -199,12 +198,12 @@ impl<B: BlockT> ProducerSelectHandlerController<B>{
 
 #[derive(Debug)]
 enum ToHandler<B: BlockT> {
-	PropagateNumber(u64, mpsc::UnboundedSender<u64>),
-	PropagateRandom(u64, NumberFor<B>),
-	SendVote(VoteData<B>, mpsc::UnboundedSender<Option<usize>>),
+	// PropagateNumber(u64, mpsc::UnboundedSender<u64>),
+	// PropagateRandom(u64, NumberFor<B>),
+	// SendVote(VoteData<B>, mpsc::UnboundedSender<Option<usize>>),
 
-	PrepareVote(NumberFor<B>, Duration),
-	SendElectionResult,
+	// PrepareVote(NumberFor<B>, Duration),
+	// SendElectionResult,
 	// ConfigVoteRound(NumberFor<B>),
 
 	// Request(VoteElectionRequest<B>),
@@ -230,13 +229,9 @@ pub struct ProducerSelectHandler<B: BlockT + 'static, H: ExHashT> {
 	/// Prometheus metrics.
 	metrics: Option<Metrics>,
 
-	vote_map: BTreeMap<u64, PeerId>,
+	// vote_map: BTreeMap<u64, PeerId>,
 
-	// vote_sync_number: Option<NumberFor<B>>,
-	// vote_begin_time: SystemTime,
-	// vote_open_duration: Duration,
-	vote_recv_config: Option<VoteRecvConfig<B>>,
-	pending_response: Option<mpsc::UnboundedSender<Option<usize>>>,
+	// pending_response: Option<mpsc::UnboundedSender<Option<usize>>>,
 	// vote_notification_tx: Option<mpsc::UnboundedSender<(VoteData<B>, PeerId)>>,
 	vote_notification_tx: Option<mpsc::UnboundedSender<VoteDataV2<B>>>,
 	election_notification_tx: Option<mpsc::UnboundedSender<ElectionData<B>>>,
@@ -244,14 +239,13 @@ pub struct ProducerSelectHandler<B: BlockT + 'static, H: ExHashT> {
 	/// 
 	local_event_tx: mpsc::UnboundedSender<Event>,
 	local_event_rx: mpsc::UnboundedReceiver<Event>,
-	// self_stream: Pin<Box<dyn Stream<Item = Event> + Send>>,
 }
 
-struct VoteRecvConfig<B: BlockT>{
-	sync_number: NumberFor<B>,
-	begin_time: SystemTime,
-	open_duration: Duration
-}
+// struct VoteRecvConfig<B: BlockT>{
+// 	sync_number: NumberFor<B>,
+// 	begin_time: SystemTime,
+// 	open_duration: Duration
+// }
 
 #[derive(Encode, Decode, Debug)]
 enum VoteElectionNotification<B: BlockT>{
@@ -295,23 +289,23 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 				// message = self.from_controller.select_next_some().fuse() => {
 				message = self.from_controller.select_next_some() => {
 					match message {
-						ToHandler::PropagateNumber(_, _) => {
-							// self.pending_response = Some(pending_response);
-							// self.propagate_number(n, );
-						},
-						ToHandler::PropagateRandom(vote_num, parent_id) => {
-							self.propagate_number(vote_num, parent_id);
-						},
-						ToHandler::SendVote(vote_data, pending_response) => {
-							self.pending_response = Some(pending_response);
-							self.propagate_vote_v1(vote_data);
-						},
-						ToHandler::SendElectionResult=>{
-							self.send_election_result().await;
-						},
-						ToHandler::PrepareVote(sync_number, duration)=>{
-							self.prepare_vote(sync_number, duration);
-						}
+						// ToHandler::PropagateNumber(_, _) => {
+						// 	// self.pending_response = Some(pending_response);
+						// 	// self.propagate_number(n, );
+						// },
+						// ToHandler::PropagateRandom(vote_num, parent_id) => {
+						// 	self.propagate_number(vote_num, parent_id);
+						// },
+						// ToHandler::SendVote(vote_data, pending_response) => {
+						// 	self.pending_response = Some(pending_response);
+						// 	self.propagate_vote_v1(vote_data);
+						// },
+						// ToHandler::SendElectionResult=>{
+						// 	self.send_election_result().await;
+						// },
+						// ToHandler::PrepareVote(sync_number, duration)=>{
+						// 	self.prepare_vote(sync_number, duration);
+						// }
 
 						ToHandler::BuildVoteStream(tx)=>{
 							self.vote_notification_tx = Some(tx);
@@ -384,7 +378,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 				debug_assert!(_peer.is_some());
 			}
 
-			Event::NotificationsReceived { remote, messages } => {
+			Event::NotificationsReceived { remote:_, messages } => {
 				for (protocol, message) in messages {
 					if protocol != self.protocol_name {
 						continue
@@ -393,7 +387,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 					if let Ok(msg) = <VoteElectionNotification<B> as Decode>::decode(&mut message.as_ref()){
 						match msg {
 							VoteElectionNotification::VoteV2(vote_data)=>{
-								log::info!("<<<< VoteElectionNotification:VoteV2");
+								// log::info!("<<<< VoteElectionNotification:VoteV2");
 								// log::info!("<<<< vote_v2: {:?} from: {:?}", vote_data, remote);
 								self.vote_notification_tx.as_ref().map(|v|{
 									// let _ = v.unbounded_send((vote_data.clone(), remote));
@@ -432,7 +426,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 							},
 							VoteElectionNotification::Election(election_data)=>{
 								self.election_notification_tx.as_ref().map(|v|{
-									log::info!("Election");
+									// log::info!("Election");
 									let _ = v.unbounded_send(election_data);
 								});
 							},
@@ -475,54 +469,54 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 	// 	self.recv_block_number = Some(block_number);
 	// 	self.timeout = Some(time_out); 
 	// }
-	fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration){
-		// if matches!(self.service.local_role(), Role::Authority){
-		log::info!("prepare_vote, Recv Vote for {:?}, client/network/src/producer_select.rs:371", duration);
-		self.vote_recv_config = Some(VoteRecvConfig{
-			sync_number: sync_number,
-			begin_time: SystemTime::now(),
-			open_duration: duration
-		});
-		self.vote_map.clear();
-		// }
-	}
+	// fn prepare_vote(&mut self, sync_number: NumberFor<B>, duration: Duration){
+	// 	if matches!(self.service.local_role(), Role::Authority){
+	// 	log::info!("prepare_vote, Recv Vote for {:?}, client/network/src/producer_select.rs:371", duration);
+	// 	self.vote_recv_config = Some(VoteRecvConfig{
+	// 		sync_number: sync_number,
+	// 		begin_time: SystemTime::now(),
+	// 		open_duration: duration
+	// 	});
+	// 	self.vote_map.clear();
+	// 	}
+	// }
 
-	async fn send_election_result(&mut self){
-		// let mut propagated_numbers = 0;
-		// let peerid_bytes_vec = self.vote_map.iter().map(|(&vote_num, peer)|(peer.to_bytes(), vote_num)).collect::<Vec<_>>();
+	// async fn send_election_result(&mut self){
+	// 	let mut propagated_numbers = 0;
+	// 	let peerid_bytes_vec = self.vote_map.iter().map(|(&vote_num, peer)|(peer.to_bytes(), vote_num)).collect::<Vec<_>>();
 
-		// let local_peer_id = self.service.local_peer_id();
+	// 	let local_peer_id = self.service.local_peer_id();
 
-		// if matches!(self.service.local_role(), Role::Authority){
-		// 	if let Some(mut tx) = self.pending_response.clone(){
-		// 		let rank = self.vote_map.iter().position(|(_, p)|p==local_peer_id);
-		// 		// log::info!("return vote rank: {:?}", rank);
-		// 		let _ = tx.send(rank).await;
-		// 	}
-		// }
+	// 	if matches!(self.service.local_role(), Role::Authority){
+	// 		if let Some(mut tx) = self.pending_response.clone(){
+	// 			let rank = self.vote_map.iter().position(|(_, p)|p==local_peer_id);
+	// 			// log::info!("return vote rank: {:?}", rank);
+	// 			let _ = tx.send(rank).await;
+	// 		}
+	// 	}
 
-		// let to_send = <VoteElectionNotification<B>>::Election(peerid_bytes_vec).encode();
-		// // let to_send = self.vote_map.iter().map(|(_, v)|v.to_bytes()).collect::<Vec<_>>().encode();
+	// 	let to_send = <VoteElectionNotification<B>>::Election(peerid_bytes_vec).encode();
+	// 	// let to_send = self.vote_map.iter().map(|(_, v)|v.to_bytes()).collect::<Vec<_>>().encode();
 
-		// for (_, who) in self.vote_map.iter(){
-		// 	// if who == local_peer_id{
-		// 	// 	continue;
-		// 	// }
-		// // for (who, peer) in self.peers.iter_mut() {
-		// 	propagated_numbers += 1;
+	// 	for (_, who) in self.vote_map.iter(){
+	// 		// if who == local_peer_id{
+	// 		// 	continue;
+	// 		// }
+	// 	// for (who, peer) in self.peers.iter_mut() {
+	// 		propagated_numbers += 1;
 
-        //     log::info!(">>>> Election to {:?}, client/network/src/producer_select.rs:446", who);
-        //     self.service.write_notification(
-        //         who.clone(),
-        //         self.protocol_name.clone(),
-        //         to_send.clone(),
-        //     );
-		// }
+    //         log::info!(">>>> Election to {:?}, client/network/src/producer_select.rs:446", who);
+    //         self.service.write_notification(
+    //             who.clone(),
+    //             self.protocol_name.clone(),
+    //             to_send.clone(),
+    //         );
+	// 	}
 
-		// if let Some(ref metriecs) = self.metrics {
-		// 	metriecs.propagated_numbers.inc_by(propagated_numbers as _)
-		// }
-	}
+	// 	if let Some(ref metriecs) = self.metrics {
+	// 		metriecs.propagated_numbers.inc_by(propagated_numbers as _)
+	// 	}
+	// }
 
 	fn propagate_election(&mut self, election_data: ElectionData<B>){
 
@@ -537,7 +531,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 
 			propagated_numbers += 1;
 
-			log::info!(">>>> Election {:?}, client/network/src/producer_select.rs:533", who);
+			// log::info!(">>>> Election {:?}, client/network/src/producer_select.rs: 540", who);
 			self.service.write_notification(
 				who.clone(),
 				self.protocol_name.clone(),
@@ -545,7 +539,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 			);
 		}
 
-		log::info!(">>>> Election to local_peer_id: client/network/src/producer_select.rs:541");
+		// log::info!(">>>> Election to local_peer_id: client/network/src/producer_select.rs: 548");
 		let local_peer_id = self.service.local_peer_id();
 		let _ = self.local_event_tx.unbounded_send(
 			Event::NotificationsReceived{
@@ -572,7 +566,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 
 			propagated_numbers += 1;
 
-			log::info!(">>>> {:?}, client/network/src/producer_select.rs:514", who);
+			// log::info!(">>>> {:?}, client/network/src/producer_select.rs:514", who);
 			self.service.write_notification(
 				who.clone(),
 				self.protocol_name.clone(),
@@ -580,7 +574,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 			);
 		}
 
-		log::info!(">>>> to local_peer_id: client/network/src/producer_select.rs:522");
+		// log::info!(">>>> to local_peer_id: client/network/src/producer_select.rs:522");
 		let local_peer_id = self.service.local_peer_id();
 		let _ = self.local_event_tx.unbounded_send(
 			Event::NotificationsReceived{
@@ -594,7 +588,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 		}
 	}
 
-	fn propagate_vote_v1(&mut self, vote_data: VoteData<B>){
+	fn _propagate_vote_v1(&mut self, vote_data: VoteData<B>){
 		let VoteData{ vote_num, .. } = vote_data;
 
 		// propagate vote_data to authority
@@ -631,7 +625,7 @@ impl<B: BlockT + 'static, H: ExHashT> ProducerSelectHandler<B, H> {
 		}
 	}
 
-	fn propagate_number(&mut self, vote_num: u64, sync_id: NumberFor<B>){
+	fn _propagate_number(&mut self, vote_num: u64, sync_id: NumberFor<B>){
 		let mut propagated_numbers = 0;
 
 		for (who, peer) in self.peers.iter_mut() {
