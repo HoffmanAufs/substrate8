@@ -611,20 +611,27 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 				worker.propagate_vote(&cur_hash);
 				// let cur_hash = chain_head.hash();
 
-				let full_duration_ms = 15*3*1000;
-				let mut duration_percent = 1f32;
+				// let full_duration_ms = 15*3*1000;
 
-				// let mut full_timeout_duration = Duration::from_secs(15*3);
+				let mut full_timeout_duration = Duration::from_secs(15*3);
 				let start_time = SystemTime::now();
 				// let mut rank_vec :Vec<usize>= vec![];
 				let mut election_vec = vec![];
+				// let mut rest_timeout_duration = Duration::from_secs(15*3);
+				let mut timeout_rate = 1f32;
+				let mut has_election = false;
 
 				loop{
-					let full_timeout_duration = Duration::from_millis(((full_duration_ms as f32) * duration_percent) as u64);
+					// let full_timeout_duration = Duration::from_millis(((full_duration_ms as f32) * duration_percent) as u64);
 					let elapsed_duration = start_time.elapsed().unwrap_or(full_timeout_duration);
-					let rest_timeout_duration = full_timeout_duration.checked_sub(elapsed_duration).unwrap_or(Duration::from_secs(0));
-					if rest_timeout_duration == Duration::from_nanos(0){
-						log::info!("Author: timeout: {:?}, ({:?}-{:?})", rest_timeout_duration, full_timeout_duration, elapsed_duration);
+					let mut rest_timeout_duration = full_timeout_duration.checked_sub(elapsed_duration).unwrap_or(Duration::from_secs(0));
+					// if rest_timeout_duration == Duration::from_nanos(0){
+					// 	log::info!("Author: timeout: {:?}, ({:?}-{:?})", rest_timeout_duration, full_timeout_duration, elapsed_duration);
+					// }
+					if timeout_rate < 1f32{
+						let last_rest_millis = rest_timeout_duration.as_millis();
+						let rest_millis = ((last_rest_millis as f32) * timeout_rate) as u64;
+						rest_timeout_duration = Duration::from_millis(rest_millis);
 					}
 					let timeout = Delay::new(rest_timeout_duration);
 
@@ -648,16 +655,17 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 								continue;
 							}
 
+							has_election |= true;
 							election_vec.push(election.ranks);
 							// let rank = worker.get_election_rank(&election_vec);
-							duration_percent = worker.update_timeout_duration(&cur_hash, &election_vec);
+							timeout_rate = worker.update_timeout_duration(&cur_hash, &election_vec);
 							// log::info!("update_duration: {}, {}", duration_percent, cur_hash);
 							continue;
 						},
 						_ = timeout.fuse()=>{
 							// log::info!("Author: rest duration: {:?}", rest_timeout_duration);
 							// log::info!("{:?}", duration_percent);
-							if duration_percent < 1.0{
+							if has_election {
 								log::info!("Author: timeout, produce block");
 								if let Ok(slot_info) = slots.default_slot().await{
 									let _ = worker.on_slot(slot_info).await;
@@ -739,7 +747,7 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 								}
 								else{
 									// if in_committee{
-									if true{
+									if true {
 										// state = CommitteeState::RecvVote(block.hash());
 										state = CommitteeState::RecvVote(block.hash);
 										break;
@@ -752,10 +760,8 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 							}
 						},
 						vote_data = vote_rx.select_next_some()=>{
-
 							if worker.verify_vote(&vote_data){
 								// log::info!("verify success");
-
 								let VoteDataV2{hash, sig_bytes, pub_bytes} = vote_data;
 								let sig_big_uint = BigUint::from_bytes_be(sig_bytes.as_slice());
 								if let Some(bt_map) = root_vote_map.get_mut(&hash){
@@ -771,10 +777,6 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 								log::info!("--Committee::WaitStart verify failed");
 							}
 							continue;
-							// if worker.verify_vote(vote_data){
-							// }
-							// log::info!("Committee: recv vote: {:?}", vote_data);
-							// save the vote
 						},
 						_ = finality_notification_stream.next()=>{
 							continue;
