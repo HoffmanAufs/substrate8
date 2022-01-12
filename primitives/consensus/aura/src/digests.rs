@@ -27,12 +27,13 @@ use sp_consensus_slots::Slot;
 // use sp_runtime::generic::{DigestItem, RuntimeDebug};
 use sp_runtime::{DigestItem, RuntimeDebug};
 use sp_std::fmt::Debug;
+use sp_std::vec::Vec;
 
 #[derive(Clone, RuntimeDebug, Encode, Decode)]
 pub struct PreDigest{
-	pub authority_index: u32,
+	// pub authority_index: u32,
 	pub slot: Slot,
-	// pub public: Vec<u32>,
+	pub public: Vec<u8>,
 }
 
 /// A digest item which is usable with aura consensus.

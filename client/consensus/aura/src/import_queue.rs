@@ -56,12 +56,12 @@ use std::{fmt::Debug, hash::Hash, marker::PhantomData, sync::Arc};
 ///
 /// This digest item will always return `Some` when used with `as_aura_seal`.
 fn check_header<C, B: BlockT, P: Pair>(
-	client: &C,
-	slot_now: Slot,
+	_client: &C,
+	_slot_now: Slot,
 	mut header: B::Header,
 	hash: B::Hash,
-	authorities: &[AuthorityId<P>],
-	check_for_equivocation: CheckForEquivocation,
+	_authorities: &[AuthorityId<P>],
+	_check_for_equivocation: CheckForEquivocation,
 ) -> Result<CheckedHeader<B::Header, (Slot, DigestItemFor<B>)>, Error<B>>
 where
 	DigestItemFor<B>: CompatibleDigestItem<P::Signature>,
@@ -77,46 +77,67 @@ where
 	// let pre_digest = find_pre_digest::<B>(&header)?;
 	let slot = pre_digest.slot;
 
-	if slot > slot_now {
-		header.digest_mut().push(seal);
-		Ok(CheckedHeader::Deferred(header, slot))
-	} else {
-		// check the signature is valid under the expected authority and
-		// chain state.
-		// let expected_author =
-		// 	slot_author::<P>(0.into(), &authorities).ok_or_else(|| Error::SlotAuthorNotFound)?;
-		
-		let expected_author = authorities.get(pre_digest.authority_index as usize).expect(
-			"Get expect author error");
+	let expected_author = match <AuthorityId<P> as Decode>::decode(&mut pre_digest.public.as_slice()){
+		Ok(author)=> author.clone(),
+		Err(_) => return Err(Error::NoDigestFound),
+	};
 
-		// let expected_author = match authorities.get(pre_digest.authority_index as usize) { 
-		// 	Some(author) => author.0.clone(),
-		// 	None => return Err(Error::SlotAuthorNotFound),
-		// };
-
-		let pre_hash = header.hash();
-
-		if P::verify(&sig, pre_hash.as_ref(), expected_author) {
-			if check_for_equivocation.check_for_equivocation() {
-				if let Some(equivocation_proof) =
-					check_equivocation(client, slot_now, slot, &header, expected_author)
-						.map_err(Error::Client)?
-				{
-					info!(
-						target: "aura",
-						"Slot author is equivocating at slot {} with headers {:?} and {:?}",
-						slot,
-						equivocation_proof.first_header.hash(),
-						equivocation_proof.second_header.hash(),
-					);
-				}
-			}
-
-			Ok(CheckedHeader::Checked(header, (slot, seal)))
-		} else {
-			Err(Error::BadSignature(hash))
-		}
+	let pre_hash = header.hash();
+	if P::verify(&sig, pre_hash.as_ref(), &expected_author) {
+		Ok(CheckedHeader::Checked(header, (slot, seal)))
 	}
+	else{
+		Err(Error::BadSignature(hash))
+	}
+
+	// if slot > slot_now {
+	// 	header.digest_mut().push(seal);
+	// 	Ok(CheckedHeader::Deferred(header, slot))
+	// } else {
+	// 	// check the signature is valid under the expected authority and
+	// 	// chain state.
+	// 	// let expected_author =
+	// 	// 	slot_author::<P>(0.into(), &authorities).ok_or_else(|| Error::SlotAuthorNotFound)?;
+	// 	// let expected_author = match <AuthorityId<P> as Decode>::decode(&mut pre_digest.public.as_slice()){
+	// 	// 	Ok(x) => x,
+	// 	// 	Err(e) => return Err(Error::NoDigestFound),
+	// 	// };
+
+	// 	let expected_author = <AuthorityId<P> as Decode>::decode(&mut pre_digest.public.as_slice())
+	// 		.expect("Get expect author error");
+
+
+	// 	// let expected_author = authorities.get(pre_digest.authority_index as usize).expect(
+	// 	// 	"Get expect author error");
+
+	// 	// let expected_author = match authorities.get(pre_digest.authority_index as usize) { 
+	// 	// 	Some(author) => author.0.clone(),
+	// 	// 	None => return Err(Error::SlotAuthorNotFound),
+	// 	// };
+
+	// 	let pre_hash = header.hash();
+
+	// 	if P::verify(&sig, pre_hash.as_ref(), &expected_author) {
+	// 		if check_for_equivocation.check_for_equivocation() {
+	// 			if let Some(equivocation_proof) =
+	// 				check_equivocation(client, slot_now, slot, &header, &expected_author)
+	// 					.map_err(Error::Client)?
+	// 			{
+	// 				info!(
+	// 					target: "aura",
+	// 					"Slot author is equivocating at slot {} with headers {:?} and {:?}",
+	// 					slot,
+	// 					equivocation_proof.first_header.hash(),
+	// 					equivocation_proof.second_header.hash(),
+	// 				);
+	// 			}
+	// 		}
+
+	// 		Ok(CheckedHeader::Checked(header, (slot, seal)))
+	// 	} else {
+	// 		Err(Error::BadSignature(hash))
+	// 	}
+	// }
 }
 
 /// A verifier for Aura blocks.

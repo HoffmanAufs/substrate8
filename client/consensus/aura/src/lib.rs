@@ -561,13 +561,12 @@ where
 		&mut self,
 		_header: &B::Header,
 		slot: Slot,
-		epoch_data: &Self::EpochData,
+		_epoch_data: &Self::EpochData,
 	) -> Option<Self::Claim> {
 		// let fixed_index = 0;
 		// let authors = epoch_data;
 		// let expect_author = authors.get(fixed_index)?;
 		// // log::info!("claim slot: {:?}", expect_author);
-
 
 		// if SyncCryptoStore::has_keys(
 		// 	&*self.keystore,
@@ -580,18 +579,51 @@ where
 		// else{
 		// 	return None;
 		// }
-		let authorities = epoch_data;
+		// let authorities = epoch_data;
 
-		for (idx, author) in authorities.iter().enumerate(){
+		// for (idx, author) in authorities.iter().enumerate(){
+		// 	if SyncCryptoStore::has_keys(
+		// 		&*self.keystore,
+		// 		&[(author.to_raw_vec(), sp_application_crypto::key_types::AURA)],
+		// 	){
+		// 		// let pre_digest = PreDigest{authority_index: idx as u32 , slot: slot, public: author.to_raw_vec()};
+		// 		let pre_digest = PreDigest{slot: slot, public: author.to_raw_vec()};
+		// 		return Some((pre_digest, author.clone()));
+		// 	}
+		// }
+
+		let sr25519_public_keys = SyncCryptoStore::sr25519_public_keys(
+			&*self.keystore, 
+			sp_application_crypto::key_types::AURA
+		);
+
+		if sr25519_public_keys.len() == 1{
+
+			let pub_bytes = sr25519_public_keys[0].to_raw_vec();
+			if let Ok(author) = <AuthorityId<P> as Decode>::decode(&mut pub_bytes.as_slice()){
+				let pre_digest = PreDigest{slot: slot, public: author.to_raw_vec()};
+				return Some((pre_digest, author.clone()));
+			}
+		}
+
+		None
+	}
+
+	fn is_committee(&mut self, hash: &B::Hash)->bool{
+		let committee = match authorities(self.client.as_ref(), &BlockId::Hash(hash.clone())){
+			Ok(x)=>x,
+			Err(_)=> return false
+		};
+
+		for author in committee.iter(){
 			if SyncCryptoStore::has_keys(
 				&*self.keystore,
 				&[(author.to_raw_vec(), sp_application_crypto::key_types::AURA)],
 			){
-				let pre_digest = PreDigest{authority_index: idx as u32 , slot: slot};
-				return Some((pre_digest, author.clone()));
+				return true;
 			}
 		}
-		None
+		return false;
 	}
 
 	// add by user
@@ -959,16 +991,17 @@ impl<B: BlockT> std::convert::From<Error<B>> for String {
 fn find_pre_digest<B: BlockT, Signature: Codec>(header: &B::Header) -> Result<PreDigest, Error<B>> {
 	if header.number().is_zero() {
 		return Ok(PreDigest{
-			authority_index: 0u32,
+			// authority_index: 0u32,
 			slot: 0.into(), 
+			public: vec![],
 		})
 	}
 
 	let mut pre_digest: Option<_> = None;
 	for log in header.digest().logs() {
 		trace!(target: "aura", "Checking log {:?}", log);
-		// match (CompatibleDigestItem::<Signature>::as_aura_pre_digest(log), pre_digest.is_some()) {
-		match (log.as_aura_pre_digest(), pre_digest.is_some()){
+		match (CompatibleDigestItem::<Signature>::as_aura_pre_digest(log), pre_digest.is_some()) {
+		// match (log.as_aura_pre_digest(), pre_digest.is_some()){
 			(Some(_), true) => return Err(aura_err(Error::MultipleHeaders)),
 			(None, _) => trace!(target: "babe", "Ignoring digest not meant for us"),
 			(s, false) => pre_digest = s,

@@ -571,6 +571,8 @@ pub trait SimpleSlotWorker<B: BlockT> {
 	fn verify_election(&mut self, election_data: &ElectionData<B>, hash: &B::Hash)->bool;
 	/// no doc
 	fn update_timeout_duration(&mut self, hash: &B::Hash, election_vec: &Vec<Vec<Vec<u8>>>)->f32;
+	/// no doce
+	fn is_committee(&mut self, hash: &B::Hash)->bool;
 }
 
 // #[async_trait::async_trait]
@@ -730,7 +732,7 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 						let rest_millis = ((last_rest_millis as f32) * rest_timeout_rate) as u64;
 						rest_timeout_duration = Duration::from_millis(rest_millis);
 					}
-					log::info!("rest timeout duration: {:?}", rest_timeout_duration);
+					// log::info!("rest timeout duration: {:?}", rest_timeout_duration);
 					let timeout = Delay::new(rest_timeout_duration);
 
 					futures::select!{
@@ -840,8 +842,8 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 									break;
 								}
 								else{
-									// if in_committee{
-									if true {
+									if worker.is_committee(&block.hash){
+									// if true {
 										state = CommitteeState::RecvVote(block.hash);
 										break;
 									}
@@ -854,8 +856,9 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 						},
 						vote_data = vote_rx.select_next_some()=>{
 							if worker.verify_vote(&vote_data){
-								// log::info!("verify success");
 								let VoteData{hash, sig_bytes, pub_bytes} = vote_data;
+
+								log::info!("--Committee: recv vote with hash: {}", hash);
 								let sig_big_uint = BigUint::from_bytes_be(sig_bytes.as_slice());
 								if let Some(bt_map) = root_vote_map.get_mut(&hash){
 									bt_map.insert(sig_big_uint, pub_bytes);
@@ -877,21 +880,23 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 						},
 						_ = timeout.fuse()=>{
 							if is_init == false{
-								// is_init = true;
-								if init_hash.is_some(){
+								if let Some(init_hash) = init_hash{
 									log::info!("--Committee to RecvVote from init");
-									state = CommitteeState::RecvVote(init_hash.unwrap());
-									break;
+									if worker.is_committee(&init_hash){
+										state = CommitteeState::RecvVote(init_hash);
+										break;
+									}
 								}
 							}
 						}
+						
 					}
 				}
 				is_init = true;
 				let _ = init_hash.take();
 			},
 			CommitteeState::RecvVote(cur_hash)=>{
-				log::info!("--CommitteeState::RecvVote, {}", cur_hash);
+				log::info!("--CommitteeState::RecvVote({})", cur_hash);
 				let recv_duration = Duration::from_secs(8);
 				let full_timeout_duration = recv_duration;
 				let start_time = SystemTime::now();
@@ -925,7 +930,7 @@ pub async fn aura_committee_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 							if worker.verify_vote(&vote_data){
 								// log::info!("CommitteeRecv: verify success");
 								let VoteData{hash, sig_bytes, pub_bytes} = vote_data;
-								log::info!("--Committee: RecvVote: {}", hash);
+								log::info!("--Committee: recv vote with hash: {}", hash);
 								let sig_big_uint = BigUint::from_bytes_be(sig_bytes.as_slice());
 								if let Some(bt_map) = root_vote_map.get_mut(&hash){
 									bt_map.insert(sig_big_uint, pub_bytes);
