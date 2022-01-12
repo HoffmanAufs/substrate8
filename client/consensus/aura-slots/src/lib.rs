@@ -232,16 +232,16 @@ pub trait SimpleSlotWorker<B: BlockT> {
 
 		let proposing_remaining_duration = self.proposing_remaining_duration(&slot_info);
 
-		let proposing_remaining = if proposing_remaining_duration == Duration::default() {
-			debug!(
-				target: logging_target,
-				"Skipping proposal slot {} since there's no time left to propose", slot,
-			);
+		// let proposing_remaining = if proposing_remaining_duration == Duration::default() {
+		// 	debug!(
+		// 		target: logging_target,
+		// 		"Skipping proposal slot {} since there's no time left to propose", slot,
+		// 	);
 
-			return None
-		} else {
-			Delay::new(proposing_remaining_duration)
-		};
+		// 	return None
+		// } else {
+		// 	Delay::new(proposing_remaining_duration)
+		// };
 
 		let epoch_data = match self.epoch_data(&slot_info.chain_head, slot) {
 			Ok(epoch_data) => epoch_data,
@@ -339,33 +339,41 @@ pub trait SimpleSlotWorker<B: BlockT> {
 			)
 			.map_err(|e| sp_consensus::Error::ClientImport(format!("{:?}", e)));
 
-		let proposal = match futures::future::select(proposing, proposing_remaining).await {
-			Either::Left((Ok(p), _)) => p,
-			Either::Left((Err(err), _)) => {
+		// let proposal = match futures::future::select(proposing, proposing_remaining).await {
+		// 	Either::Left((Ok(p), _)) => p,
+		// 	Either::Left((Err(err), _)) => {
+		// 		warn!(target: logging_target, "Proposing failed: {:?}", err);
+
+		// 		return None
+		// 	},
+		// 	Either::Right(_) => {
+		// 		info!(
+		// 			target: logging_target,
+		// 			"⌛️ Discarding proposal for slot {}; block production took too long", slot,
+		// 		);
+		// 		// If the node was compiled with debug, tell the user to use release optimizations.
+		// 		#[cfg(build_type = "debug")]
+		// 		info!(
+		// 			target: logging_target,
+		// 			"👉 Recompile your node in `--release` mode to mitigate this problem.",
+		// 		);
+		// 		telemetry!(
+		// 			telemetry;
+		// 			CONSENSUS_INFO;
+		// 			"slots.discarding_proposal_took_too_long";
+		// 			"slot" => *slot,
+		// 		);
+
+		// 		return None
+		// 	},
+		// };
+
+		let proposal = match proposing.await{
+			Ok(p) => p,
+			Err(err) => {
 				warn!(target: logging_target, "Proposing failed: {:?}", err);
-
-				return None
-			},
-			Either::Right(_) => {
-				info!(
-					target: logging_target,
-					"⌛️ Discarding proposal for slot {}; block production took too long", slot,
-				);
-				// If the node was compiled with debug, tell the user to use release optimizations.
-				#[cfg(build_type = "debug")]
-				info!(
-					target: logging_target,
-					"👉 Recompile your node in `--release` mode to mitigate this problem.",
-				);
-				telemetry!(
-					telemetry;
-					CONSENSUS_INFO;
-					"slots.discarding_proposal_took_too_long";
-					"slot" => *slot,
-				);
-
-				return None
-			},
+				return None;
+			}
 		};
 
 		let block_import_params_maker = self.block_import_params();
@@ -437,37 +445,132 @@ pub trait SimpleSlotWorker<B: BlockT> {
 		Some(SlotResult { block: B::new(header, body), storage_proof })
 	}
 
-	/// no doc
-	// fn author_send_vote(&mut self, header: &B::Header);
+	// async fn produce_block(
+	// 	&mut self, 
+	// 	parent_header: B::Header,
+	// )-> Option<SlotResult<B, <Self::Proposer as Proposer<B>>::Proof>> {
+
+	// 	let proposer = match self.proposer(&parent_header).await {
+	// 		Ok(p) => p,
+	// 		Err(err) => {
+	// 			warn!(
+	// 				target: logging_target,
+	// 				"Unable to author block prev: {}: {:?}", parent_header.hash(), err,
+	// 			);
+
+	// 			telemetry!(
+	// 				telemetry;
+	// 				CONSENSUS_WARN;
+	// 				"slots.unable_authoring_block";
+	// 				"slot" => *slot,
+	// 				"err" => ?err
+	// 			);
+
+	// 			return None
+	// 		},
+	// 	};
+
+	// 	let logs = self.pre_digest_data(slot, &claim);
+
+	// 	// deadline our production to 98% of the total time left for proposing. As we deadline
+	// 	// the proposing below to the same total time left, the 2% margin should be enough for
+	// 	// the result to be returned.
+	// 	let proposing = proposer
+	// 		.propose(
+	// 			slot_info.inherent_data,
+	// 			sp_runtime::generic::Digest { logs },
+	// 			proposing_remaining_duration.mul_f32(0.98),
+	// 			None,
+	// 		)
+	// 		.map_err(|e| sp_consensus::Error::ClientImport(format!("{:?}", e)));
+
+	// 	let proposal = match proposing.await{
+	// 		Ok(p) => p,
+	// 		Err(err) => {
+	// 			warn!(target: logging_target, "Proposing failed: {:?}", err);
+	// 			return None;
+	// 		}
+	// 	};
+
+	// 	let (block, storage_proof) = (proposal.block, proposal.proof);
+	// 	let (header, body) = block.deconstruct();
+	// 	let header_num = *header.number();
+	// 	let header_hash = header.hash();
+	// 	let parent_hash = *header.parent_hash();
+
+	// 	let block_import_params_maker = self.block_import_params();
+	// 	let block_import_params = match block_import_params_maker(
+	// 		header,
+	// 		&header_hash,
+	// 		body.clone(),
+	// 		proposal.storage_changes,
+	// 		claim,
+	// 		epoch_data,
+	// 	) {
+	// 		Ok(bi) => bi,
+	// 		Err(err) => {
+	// 			warn!(target: logging_target, "Failed to create block import params: {:?}", err);
+
+	// 			return None
+	// 		},
+	// 	};
+
+	// 	info!(
+	// 		target: logging_target,
+	// 		"🔖 Pre-sealed block at {}. Hash now {}, previously {}.",
+	// 		header_num,
+	// 		block_import_params.post_hash(),
+	// 		header_hash,
+	// 	);
+
+	// 	telemetry!(
+	// 		telemetry;
+	// 		CONSENSUS_INFO;
+	// 		"slots.pre_sealed_block";
+	// 		"header_num" => ?header_num,
+	// 		"hash_now" => ?block_import_params.post_hash(),
+	// 		"hash_previously" => ?header_hash,
+	// 	);
+
+	// 	let header = block_import_params.post_header();
+	// 	let block_import = self.block_import();
+	// 	match block_import.import_block(block_import_params, Default::default()).await {
+	// 		Ok(res) => {
+	// 			res.handle_justification(
+	// 				&header.hash(),
+	// 				*header.number(),
+	// 				self.justification_sync_link(),
+	// 			);
+	// 		},
+	// 		Err(err) => {
+	// 			warn!(
+	// 				target: logging_target,
+	// 				"Error with block built on {:?}: {:?}", parent_hash, err,
+	// 			);
+
+	// 			telemetry!(
+	// 				telemetry;
+	// 				CONSENSUS_WARN;
+	// 				"slots.err_with_block_built_on";
+	// 				"hash" => ?parent_hash,
+	// 				"err" => ?err,
+	// 			);
+	// 		},
+	// 	}
+
+	// 	Some(SlotResult { block: B::new(header, body), storage_proof })
+	// }
 
 	/// no doc
 	fn propagate_vote(&mut self, hash: &B::Hash);
-
 	/// no doc
 	fn propagate_election(&mut self, hash: B::Hash, _: Vec<Vec<u8>>);
-
 	/// no doc
 	fn verify_vote(&mut self, vote_data: &VoteData<B>)->bool;
 	/// no doc
 	fn verify_election(&mut self, election_data: &ElectionData<B>, hash: &B::Hash)->bool;
 	/// no doc
 	fn update_timeout_duration(&mut self, hash: &B::Hash, election_vec: &Vec<Vec<Vec<u8>>>)->f32;
-
-	// async fn propagate_vote<S: SelectChain<B>>(&mut self, select_chain: S);
-	// async fn propagate_vote(&mut self, select_chain: SelectChain<B>){
-	// 	let chain_head = match select_chain.best_chain().await{
-	// 		Ok(x)=>x,
-	// 		Err(e)=>return
-	// 	};
-
-	// 	let vote_num = {
-	// 		let mut rng = rand::thread_rng();
-	// 		rng.gen::<u64>() & 0xFFFFu64
-	// 	};
-	// 	let &sync_id = chain_header.number();
-	// 	let vote_data = <VoteData<B>>::new(vote_num, sync_id);
-	// 	self.sync_oracle().ve_request(VoteElectionRequest::PropagateVote(vote_data));
-	// }
 }
 
 // #[async_trait::async_trait]
@@ -530,7 +633,6 @@ enum AuthorState<B: BlockT>{
 	WaitStart,
 	WaitProposal(B::Hash),
 }
-
 
 /// aura author worker
 pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
@@ -620,7 +722,6 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 				loop{
 					let elapsed_duration = start_time.elapsed().unwrap_or(full_timeout_duration);
 					let mut rest_timeout_duration = full_timeout_duration.checked_sub(elapsed_duration).unwrap_or(Duration::from_secs(0));
-					log::info!("rest timeout duration: {:?}", rest_timeout_duration);
 					// if rest_timeout_duration == Duration::from_nanos(0){
 					// 	log::info!("Author: timeout: {:?}, ({:?}-{:?})", rest_timeout_duration, full_timeout_duration, elapsed_duration);
 					// }
@@ -629,12 +730,13 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 						let rest_millis = ((last_rest_millis as f32) * rest_timeout_rate) as u64;
 						rest_timeout_duration = Duration::from_millis(rest_millis);
 					}
+					log::info!("rest timeout duration: {:?}", rest_timeout_duration);
 					let timeout = Delay::new(rest_timeout_duration);
 
 					futures::select!{
 						block = imported_blocks_stream.next()=>{
-							log::info!("Author, import block from outside");
 							if let Some(block) = block{
+								log::info!("Author, import block from outside: {}", block.hash);
 								if sync_oracle.is_major_syncing(){
 									state = AuthorState::WaitStart;
 									break;
@@ -660,7 +762,7 @@ pub async fn aura_author_slot_worker<B, C, S, W, T, SO, CIDP, CAW>(
 						_ = timeout.fuse()=>{
 							// log::info!("Author: rest duration: {:?}", rest_timeout_duration);
 							if has_election {
-								log::info!("Author: timeout, produce block");
+								log::info!("Author: timeout, prepare block at: {}", cur_hash);
 								if let Ok(slot_info) = slots.default_slot().await{
 									let _ = worker.on_slot(slot_info).await;
 								}

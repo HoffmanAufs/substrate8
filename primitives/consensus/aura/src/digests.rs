@@ -32,6 +32,7 @@ use sp_std::fmt::Debug;
 pub struct PreDigest{
 	pub authority_index: u32,
 	pub slot: Slot,
+	// pub public: Vec<u32>,
 }
 
 /// A digest item which is usable with aura consensus.

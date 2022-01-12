@@ -136,25 +136,6 @@ fn slot_author<P: Pair>(slot: Slot, authorities: &[AuthorityId<P>]) -> Option<&A
 	Some(current_author)
 }
 
-// fn claim_delay(author_len: Option<usize>, election_result: Vec<Option<usize>>)->Option<Duration>{
-// 	if let Some(author_len) = author_len{
-// 		let election_head_len = election_result.iter().filter_map(
-// 			|rand|rand.as_ref()).fold(0, |r, &x|if x == 0 {r+1} else {r});
-		
-// 		// log::info!("election head len: {}", election_head_len);
-// 		if election_head_len*2 > author_len{
-// 			log::info!("Claim: elected count: {}, client/consensus/aura/src/lib.rs:137", election_head_len);
-// 			return Some(Duration::new(0, 0));
-// 		}
-// 		else{
-// 			log::info!("Not Claim: elected count: {}, client/consensus/aura/src/lib.rs:141", election_head_len);
-// 			return None;
-// 		}
-// 	}
-// 	log::info!("Not claim slot, client/consensus/aura/src/lib.rs:139");
-// 	return None;
-// }
-
 /// Parameters of [`start_aura`].
 pub struct StartAuraParams<C, SC, I, PF, SO, L, CIDP, BS, CAW> {
 	/// The duration of a slot.
@@ -733,35 +714,6 @@ where
 		)
 	}
 
-	// fn author_send_vote(&mut self, header: &B::Header){
-	// 	if let Ok(committee) = authorities(self.client.as_ref(), &BlockId::Hash(header.hash())){
-	// 		// let mut peer_vec: Vec<PeerId> = vec![];
-	// 		// for (i, member) in committee.iter().enumerate(){
-	// 		// 	log::info!("{}: {:?}", i, member);
-
-	// 		// 	// match PeerId::from_bytes(member.as_slice()){
-	// 		// 	// 	Ok(peer)=>{ peer_vec.push(peer);},
-	// 		// 	// 	Err(e)=>{log::info!("convert err:{}", e);}
-	// 		// 	// }
-
-	// 		// 	// peer_vec.push(member.into());
-	// 		// 	// log::info!("{}: {:?}", i, member);
-	// 		// 	// if let Ok(peer) = PeerId::from_bytes(member.clone().to_raw_vec().as_slice()){
-	// 		// 	// 	peer_vec.push(peer);
-	// 		// 	// };
-	// 		// }
-
-	// 		// let vote_num = {
-	// 		// 	let mut rng = rand::thread_rng();
-	// 		// 	rng.gen::<u64>() & 0xFFFFu64
-	// 		// };
-	// 		// let &sync_id = header.number();
-	// 		// let vote_data = <VoteData<B>>::new(vote_num, sync_id);
-	// 		// self.sync_oracle.ve_request(VoteElectionRequest::SendVote(vote_data, peer_vec));
-	// 		// self.sync_oracle.ve_request()
-	// 	}
-	// }
-
 	// fn propagate_vote(&mut self){
 	fn propagate_vote(&mut self, cur_hash: &B::Hash){
 		let sr25519_public_keys = SyncCryptoStore::sr25519_public_keys(
@@ -932,8 +884,6 @@ where
 
 		1.0
 	}
-
-	// fn recv_election(&mut self, )
 }
 
 fn caculate_cur_value(rank_vec: &Vec<usize>, max_vote_rank: usize)->u64{
@@ -1017,8 +967,8 @@ fn find_pre_digest<B: BlockT, Signature: Codec>(header: &B::Header) -> Result<Pr
 	let mut pre_digest: Option<_> = None;
 	for log in header.digest().logs() {
 		trace!(target: "aura", "Checking log {:?}", log);
-		match (CompatibleDigestItem::<Signature>::as_aura_pre_digest(log), pre_digest.is_some()) {
-		// match (log.as_aura_pre_digest(), pre_digest.is_some()){
+		// match (CompatibleDigestItem::<Signature>::as_aura_pre_digest(log), pre_digest.is_some()) {
+		match (log.as_aura_pre_digest(), pre_digest.is_some()){
 			(Some(_), true) => return Err(aura_err(Error::MultipleHeaders)),
 			(None, _) => trace!(target: "babe", "Ignoring digest not meant for us"),
 			(s, false) => pre_digest = s,
